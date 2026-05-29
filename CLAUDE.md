@@ -36,7 +36,8 @@ app/
   src/main/
     AndroidManifest.xml       MainActivity launcher, INTERNET perm (paste.rs upload)
     kotlin/.../MainActivity.kt UI (programmatic, no XML): buttons w/ content-desc
-                              test IDs (btn_run, btn_hwcaps, ...) + paste.rs upload
+                              test IDs (btn_run, btn_hwcaps, btn_viz, ...) + paste.rs upload
+    kotlin/.../VizActivity.kt  GLSurfaceView (GLES3) hosting the ImGui visualizer
     cpp/
       CMakeLists.txt          harden_target() = strict warnings + -O3 + LTO +
                               dead-code stripping; per-file -march for dot_int8/i8mm/sve2
@@ -112,9 +113,10 @@ git tag v1.2.3 && git push origin v1.2.3
 
 ## The AlgoViz sort engine (`app/src/main/cpp/algoviz/`)
 
-This fork ports the *imalgorithm* sorting visualiser onto the template. **Phase
-1 (done): the headless engine + device benchmark.** Phase 2 (later): an ImGui/
-GLES visual layer driven by the same coroutines.
+This fork ports the *imalgorithm* sorting visualiser onto the template. **Both
+phases are done.** Phase 1 = the headless engine + device benchmark (below).
+Phase 2 = an ImGui/GLES3 visual layer (`app/src/main/cpp/viz/` + `VizActivity`)
+that animates the **same** coroutines — see "The visual layer" below.
 
 - **Single source of truth = coroutines.** Each sort (`bubble/insertion/
   selection/quick/merge/heap` in `sorts.h`) is a `Generator<Step>` that mutates
@@ -141,6 +143,31 @@ GLES visual layer driven by the same coroutines.
 - **Why coroutines and not a templated `Observer`:** the visualiser needs to
   *pause* mid-sort (one step per frame); a pull-generator is the natural fit and
   the reason `std::generator` had to be hand-rolled (NDK r26b ships libc++17).
+
+## The visual layer (`app/src/main/cpp/viz/` + `VizActivity.kt`)
+
+Phase 2: an ImGui (GLES3) animated bar visualizer, launched from MainActivity's
+"Visualize sorts" button (`btn_viz`). Validated on the N975F (Mali-G76).
+
+- **No NativeActivity — ImGui in a Kotlin `GLSurfaceView`.** ImGui's stock
+  Android backend (`imgui_impl_android`) reads input from android_native_app_glue,
+  which this template removed. So we keep only the **renderer** backend
+  (`imgui_impl_opengl3`, GLES3) and write our own minimal **platform** layer in
+  `viz/viz_jni.cpp`: `VizActivity`'s `GLSurfaceView` owns EGL + the render
+  thread and forwards `surfaceCreated/Changed/drawFrame/onTouch` to JNI. All
+  ImGui calls run on the GL thread; touch is hopped there via
+  `GLSurfaceView.queueEvent` (single-threaded ImGui context, no locks).
+- **Driven by the SAME coroutines.** `viz/sort_visualizer.cpp` picks an
+  algorithm by index through `algoviz::make_sort_by_index` (a fold over the
+  `Sorts` tuple) and pulls `Step`s to animate — bars colored by the live Step:
+  compare/swap (red), pivot (purple), sorted (green). Engine and UI can't drift.
+- **ImGui is FetchContent'd** (pinned tag) into a dedicated static lib built
+  with relaxed/SYSTEM warnings; only the APK `.so` links it (+ `GLESv3`/`EGL`),
+  never the headless `cppbench` ELF.
+- **Gotcha — ImGui widgets are GL pixels, not Android views.** `scripts/ui_tap.py`
+  (content-desc automation) works for MainActivity's real `Button`s but is blind
+  to the ImGui UI (the whole `GLSurfaceView` is one opaque node). To script the
+  visualizer, use pixel taps (`adb shell input tap x y`) + `screencap` to verify.
 
 ## Extending: add a benchmark
 
