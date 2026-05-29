@@ -1,0 +1,109 @@
+name: Physical device test (N975F)
+
+# Runs the cppbench suite on the REAL rooted SM-N975F (Exynos 9825) via a
+# self-hosted runner on the dev PC. This is the "official physical tester":
+# root unlocks PMU counters + cpufreq governor pinning that the GitHub-hosted
+# x86_64 emulator (and the unrooted S24 Ultra) can't provide.
+#
+# ⚠️ SECURITY — this repo is PUBLIC and self-hosted runners on public repos are
+# risky (a fork PR could run code on the runner machine). This workflow is
+# therefore restricted to triggers only the repository OWNER can fire:
+#   - workflow_dispatch (manual, from the Actions tab)
+#   - release: published (creating a release — owner action)
+# There is deliberately NO pull_request / push trigger, so fork PRs can never
+# schedule a job on the self-hosted runner. The owner guard below is a second
+# line of defence.
+
+on:
+  workflow_dispatch:
+    inputs:
+      filter:
+        description: "cppbench filter (empty = default suite)"
+        required: false
+        default: ""
+      runs:
+        description: "number of runs to aggregate (median/CV)"
+        required: false
+        default: "7"
+  # The release workflow dispatches this one explicitly (gh workflow run) as
+  # its final step on a real tag release. We tried two auto-chains first and
+  # rejected both: `on: release` never fires (the release is published by
+  # GITHUB_TOKEN, whose events don't trigger downstream workflows), and
+  # `workflow_run` proved unreliable in practice (didn't fire within ~90s).
+  # Explicit dispatch from release.yml is deterministic — see release.yml's
+  # "Trigger physical device test" step.
+
+permissions:
+  contents: read
+
+concurrency:
+  group: device-test-n975f      # the physical device is a singleton resource
+  cancel-in-progress: false     # never interrupt a flash/bench mid-cycle
+
+jobs:
+  bench-on-device:
+    # Owner-only second line of defence on top of the owner-only trigger.
+    if: github.repository_owner == 'mariocjun'
+    runs-on: [self-hosted, n975f]
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Device probe (read-only)
+        shell: bash
+        run: bash scripts/device-harness.sh probe REDACTED_SERIAL
+
+      - name: Provision cppbench ELF (latest release asset)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p build/bench-arm64
+          # github.token has read access to this repo's releases. Download the
+          # latest cppbench arm64 asset to the harness's default path so the
+          # harness doesn't have to resolve/download it itself.
+          gh release download --repo "${{ github.repository }}" \
+            --pattern 'cppbench-*-arm64-v8a' \
+            --output build/bench-arm64/cppbench --clobber
+          ls -la build/bench-arm64/cppbench
+          file build/bench-arm64/cppbench || true
+
+      - name: Activate root on the device
+        shell: bash
+        run: bash scripts/device-harness.sh root REDACTED_SERIAL
+
+      - name: Run benchmark suite (root, performance governor, N runs)
+        shell: bash
+        run: |
+          FILTER='${{ github.event.inputs.filter }}'
+          RUNS='${{ github.event.inputs.runs }}'
+          RUNS="${RUNS:-7}"
+          bash scripts/device-harness.sh full-stats REDACTED_SERIAL "$FILTER" "$RUNS"
+
+      - name: Provision APK (latest release)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p build
+          gh release download --repo "${{ github.repository }}" --pattern '*.apk' \
+            --output build/CppAndroidTest-release.apk --clobber
+          ls -la build/CppAndroidTest-release.apk
+
+      - name: UI smoke test (content-desc locators, not coordinates)
+        shell: bash
+        run: |
+          # Drives the real app by stable content-description test IDs
+          # (btn_hwcaps / btn_run) — resolution- and layout-independent. Fails
+          # the build if a locator can't be resolved (i.e. a button id changed
+          # or vanished) or a tapped job produces no output file.
+          bash scripts/device-harness.sh ui-test REDACTED_SERIAL build/CppAndroidTest-release.apk
+
+      - name: Upload result artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: n975f-bench-${{ github.run_id }}
+          path: results/*.json
+          if-no-files-found: warn

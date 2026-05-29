@@ -1,0 +1,25 @@
+*.iml
+.gradle
+.idea/
+# Track .claude/skills/ (agent capabilities ship with the template) but ignore
+# local/machine state.
+.claude/settings.local.json
+.claude/settings.json
+local.properties
+.DS_Store
+build/
+.cxx/
+captures/
+
+gradle/
+gradlew
+gradlew.bat
+
+*.apk
+*.aab
+*.keystore
+*.jks
+
+# Benchmark run outputs (device-harness.sh / run-bench.sh) — transient,
+# device-specific. Keep them out of git; analysed + reported, not source.
+results/
