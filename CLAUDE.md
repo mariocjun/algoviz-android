@@ -37,7 +37,8 @@ app/
     AndroidManifest.xml       MainActivity launcher, INTERNET perm (paste.rs upload)
     kotlin/.../MainActivity.kt UI (programmatic, no XML): buttons w/ content-desc
                               test IDs (btn_run, btn_hwcaps, btn_viz, ...) + paste.rs upload
-    kotlin/.../VizActivity.kt  GLSurfaceView (GLES3) hosting the ImGui visualizer
+    kotlin/.../VizActivity.kt  native Jetpack Compose sort visualizer (Material 3 + Canvas)
+    kotlin/.../VizBridge.kt    JNI surface to the C++ viz engine + AAudio synth
     cpp/
       CMakeLists.txt          harden_target() = strict warnings + -O3 + LTO +
                               dead-code stripping; per-file -march for dot_int8/i8mm/sve2
@@ -55,16 +56,15 @@ app/
       algoviz/                sort-visualisation engine (the imalgorithm port)
         generator.h           hand-rolled C++20 Generator<T> coroutine (libc++17: no std::generator)
         step.h                Step (Compare/Swap/Set/Pivot) — the mutation-log unit
-        sorts.h               6 clean-room sorts as step-yielding coroutines
+        sorts.h               8 clean-room sorts as step-yielding coroutines
         sort_registry.h       SortAlgo concept + Sorts tuple + benchmark driver (NDK-free)
         sort_bench.{h,cpp}    per-cluster wrapper (pins core, runs run_all) -> bench registry
-      viz/                    ImGui (GLES3) visual layer (Phase 2/3)
-        viz_jni.cpp           VizActivity JNI + custom ImGui platform layer (no native_app_glue)
-        viz_app.{h,cpp}       controller: top bar (Single/Race/Sound/Vol/Loop) + delegate
-        sort_visualizer.{h,cpp}  single view: rainbow bars + per-frame audio + auto-loop
-        race_visualizer.{h,cpp}  race view: all sorts, aspect-adaptive grid, podium
+      viz/                    headless C++ viz engine + JNI for the Compose UI
+        single_engine.{h,cpp} single-view model: stepping + bounded undo/redo + draw mode
+        race_engine.{h,cpp}   race model: all sorts on one shuffle, ranks/podium
+        viz_engine.{h,cpp}    facade: routes controls, packs per-frame int snapshot
+        native_bridge.cpp     JNI (VizBridge): controls + nativeUpdate + nativeFill(buffer)
         audio_engine.{h,cpp}  AAudio pentatonic ASMR synth (lock-free note ring)
-        palette.h             value -> rainbow hue helper
 docs/icon.svg                 HD graph app icon (adaptive launcher icon in res/)
 tests/                        host doctest unit tests (no NDK): json, registry concept,
                               sort correctness + step-replay, sort registry/benchmark
@@ -121,18 +121,19 @@ git tag v1.2.3 && git push origin v1.2.3
 
 ## The AlgoViz sort engine (`app/src/main/cpp/algoviz/`)
 
-This fork ports the *imalgorithm* sorting visualiser onto the template. **All
-three phases are done.** Phase 1 = the headless engine + device benchmark
-(below). Phase 2 = an ImGui/GLES3 visual layer (`app/src/main/cpp/viz/` +
-`VizActivity`) animating the **same** coroutines. Phase 3 = the addictive/ASMR
-pass (graph icon, pentatonic audio, race mode, rainbow + auto-loop) — see "The
-visual layer" below.
+This fork ports the *imalgorithm* sorting visualiser onto the template. Phase 1
+= the headless engine + device benchmark (below). The visual layer began on
+ImGui/GLES but was **migrated to fully-native Jetpack Compose** (Material 3 UI +
+a Compose `Canvas` rendering a per-frame snapshot from the C++ engine over JNI;
+ImGui/GLES removed) — see "The visual layer" below. Graph icon, pentatonic ASMR
+audio, race mode + podium, rainbow bars, auto-loop, and gestures all carried
+over. All validated on the N975F.
 
-- **Single source of truth = coroutines.** Each sort (`bubble/insertion/
-  selection/quick/merge/heap` in `sorts.h`) is a `Generator<Step>` that mutates
-  its `std::vector<int>&` in place *and* `co_yield`s a `Step` per
+- **Single source of truth = coroutines.** Each sort (`bubble/cocktail/insertion/
+  shell/selection/quick/merge/heap` in `sorts.h`) is a `Generator<Step>` that
+  mutates its `std::vector<int>&` in place *and* `co_yield`s a `Step` per
   comparison/swap/write. The benchmark drains that stream and counts ops + times
-  it; Phase 2's renderer will consume the *same* stream to animate. No algorithm
+  it; the Compose renderer consumes the *same* stream to animate. No algorithm
   is written twice.
 - **The mutation-log invariant (tested):** replaying only the `Swap`/`Set` steps
   onto a fresh copy of the input reproduces the coroutine's sorted array.
@@ -154,50 +155,52 @@ visual layer" below.
   *pause* mid-sort (one step per frame); a pull-generator is the natural fit and
   the reason `std::generator` had to be hand-rolled (NDK r26b ships libc++17).
 
-## The visual layer (`app/src/main/cpp/viz/` + `VizActivity.kt`)
+## The visual layer (`VizActivity.kt` + `viz/`)
 
-Phase 2: an ImGui (GLES3) animated bar visualizer, launched from MainActivity's
-"Visualize sorts" button (`btn_viz`). Validated on the N975F (Mali-G76).
+Native **Jetpack Compose** (Material 3), launched from MainActivity's "Visualize"
+button (`btn_viz`). It started on ImGui/GLES but migrated to Compose: the dataset
+is tiny (a few hundred ints) so GL is unnecessary, and native buys Material
+theming, accessibility, and real touch gestures. Validated on the N975F (both
+orientations + Single/Race).
 
-- **No NativeActivity — ImGui in a Kotlin `GLSurfaceView`.** ImGui's stock
-  Android backend (`imgui_impl_android`) reads input from android_native_app_glue,
-  which this template removed. So we keep only the **renderer** backend
-  (`imgui_impl_opengl3`, GLES3) and write our own minimal **platform** layer in
-  `viz/viz_jni.cpp`: `VizActivity`'s `GLSurfaceView` owns EGL + the render
-  thread and forwards `surfaceCreated/Changed/drawFrame/onTouch` to JNI. All
-  ImGui calls run on the GL thread; touch is hopped there via
-  `GLSurfaceView.queueEvent` (single-threaded ImGui context, no locks).
-- **Driven by the SAME coroutines.** `viz/sort_visualizer.cpp` picks an
-  algorithm by index through `algoviz::make_sort_by_index` (a fold over the
-  `Sorts` tuple) and pulls `Step`s to animate. Engine and UI can't drift.
-- **ImGui is FetchContent'd** (pinned tag) into a dedicated static lib built
-  with relaxed/SYSTEM warnings; only the APK `.so` links it (+ `GLESv3`/`EGL`),
-  never the headless `cppbench` ELF.
-- **Gotcha — ImGui widgets are GL pixels, not Android views.** `scripts/ui_tap.py`
-  (content-desc automation) works for MainActivity's real `Button`s but is blind
-  to the ImGui UI (the whole `GLSurfaceView` is one opaque node). To script the
-  visualizer, use pixel taps (`adb shell input tap x y`) + `screencap` to verify.
+- **C++ owns the model, Compose owns the pixels.** `viz/{single,race}_engine`
+  hold the data + stepping (+ bounded undo/redo for the ◀▶ back-step, via a
+  lockstep `mirror_` that recovers Set-overwritten values) + draw mode. They're
+  NDK-free and **host-unit-tested** (`tests/test_{single,race}_engine.cpp`).
+  `viz_engine` is the facade; `native_bridge.cpp` is the JNI for `object VizBridge`.
+- **Per-frame snapshot, zero-copy.** Compose's `withFrameNanos` loop calls
+  `nativeUpdate(dt)` then `nativeFill(directByteBuffer)`; C++ writes bar values +
+  highlights + stats into a caller-owned direct buffer (no per-frame alloc/GC). A
+  Compose `Canvas` reads it and draws — rainbow by value; race = lane grid with
+  `drawText` podium labels.
+- **Same coroutines.** The engine instantiates a sort by index via
+  `algoviz::make_sort_by_index` (fold over the `Sorts` tuple) — UI and benchmark
+  can't drift from the algorithms.
+- **Audio** stays C++ AAudio (`audio_engine`): the engine flags a note value per
+  step (`consume_note`), `VizEngine` plays it. Lifecycle: VizActivity
+  `onResume/onPause` → `nativeAudioResume/Pause`.
+- **Automation:** Compose widgets expose semantics (unlike ImGui), so
+  content-desc/text automation can see the controls; for the `Canvas` itself use
+  pixel taps + `screencap`.
 
 ### Phase 3 — the addictive / ASMR pass (validated on the N975F, both orientations)
 
 - **App icon** — a 6-node graph (one per sort) as an adaptive VectorDrawable
   launcher icon (`res/`) + HD `docs/icon.svg`.
-- **ASMR audio** (`viz/audio_engine.*`, AAudio, no dep) — realtime sine voices
-  on AAudio's callback thread; the GL thread feeds note frequencies through a
+- **ASMR audio** (`viz/audio_engine.*`, AAudio, no dep) — realtime sine voices on
+  AAudio's callback thread; the per-frame update feeds note frequencies through a
   lock-free SPSC ring. **Pentatonic value→pitch** quantization makes any density
-  of notes consonant; soft attack + exp decay + tanh limiter keep it rounded and
-  click-free at any speed. One note/frame (single) / round-robin (race) so it
-  stays musical, never a wall of noise. Lifecycle: `nativeAudioResume/Pause` from
-  `VizActivity` (UI thread) drive a *global* engine; `note()` is lock-free from
-  the GL thread. Sound + volume in the top bar.
-- **Race mode** (`viz/race_visualizer.*`) — every sort races the SAME shuffle;
-  the grid auto-sizes from the viewport aspect (2×3 portrait / 4×2 landscape) to
-  fit the max algorithms, with a finish-order **podium** (gold/silver/bronze).
-- **Rainbow + loop** — bars are colored by VALUE→hue, so a sorted array is a
-  smooth rainbow (the payoff); active accesses flash white. Auto-loop reshuffles
-  and reruns on completion — endless ambient. `VizApp` (`viz/viz_app.*`) is the
-  controller: fullscreen window + top bar (Single/Race/Sound/Vol/Loop) →
-  delegates to the active view.
+  of notes consonant; soft attack + rising "bubble" pitch glide + exp decay +
+  tanh limiter + low-pass keep it rounded/ASMR at any speed. One note/frame
+  (single) / round-robin (race) so it stays musical, never noise. `note()` is
+  lock-free; `nativeAudioResume/Pause` (VizActivity onResume/onPause) start/stop.
+- **Race mode** (`viz/race_engine.*`) — all 8 sorts race the SAME shuffle; the
+  Compose Canvas lays them in an aspect-fit grid (2×4 / 4×2) with `drawText`
+  finish-order **podium** labels (#1/#2/#3…).
+- **Rainbow + loop** — bars colored by VALUE→hue, so a sorted array is a smooth
+  rainbow (the payoff); active accesses flash white. Auto-loop reshuffles + reruns
+  on completion — endless ambient. The Compose `VizActivity` is the controller
+  (Single/Race chips, Sound/Loop switches, Vol slider, transport ◀▶, steppers).
 
 ## Extending: add a benchmark
 

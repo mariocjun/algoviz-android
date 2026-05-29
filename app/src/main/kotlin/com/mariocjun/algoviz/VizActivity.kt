@@ -305,14 +305,15 @@ private fun ControlPanel(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(selected = mode == 0, onClick = { onMode(0) }, label = { Text("Single") })
                 FilterChip(selected = mode == 1, onClick = { onMode(1) }, label = { Text("Race") })
-                Text("Sound"); Switch(checked = sound, onCheckedChange = onSound)
-                Text("Loop"); Switch(checked = loop, onCheckedChange = onLoop)
                 Spacer(Modifier.weight(1f))
                 Button(onClick = onCollapse) { Text("Hide") }
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Sound"); Switch(checked = sound, onCheckedChange = onSound)
+                Text("Loop"); Switch(checked = loop, onCheckedChange = onLoop)
                 Text("Vol")
-                Slider(value = volume, onValueChange = onVolume, modifier = Modifier.width(160.dp))
+                Slider(value = volume, onValueChange = onVolume, modifier = Modifier.weight(1f))
             }
             if (mode == 0) {
                 Row(Modifier.horizontalScroll(rememberScrollState()),
@@ -325,6 +326,8 @@ private fun ControlPanel(
                     Button(onClick = onPlay) { Text(if (playing) "Pause" else "Play") }
                     Button(onClick = { onStep(-1) }) { Text("<") }
                     Button(onClick = { onStep(1) }) { Text(">") }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Button(onClick = onReset) { Text("Reset") }
                     Button(onClick = onShuffle) { Text("Shuffle") }
                     FilledTonalButton(onClick = onDraw) { Text(if (drawMode) "Sort" else "Draw") }
