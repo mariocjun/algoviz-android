@@ -192,11 +192,16 @@ target_link_libraries(imgui PUBLIC GLESv3 EGL android log)
 # paths were unreachable at runtime and just bloated the .so.
 # ----------------------------------------------------------------------------
 set(VIZ_SOURCES
+    viz/audio_engine.cpp
     viz/sort_visualizer.cpp
+    viz/race_visualizer.cpp
+    viz/viz_app.cpp
     viz/viz_jni.cpp)
 
 add_library(algoviz SHARED jni.cpp ${BENCH_SOURCES} ${VIZ_SOURCES})
-target_link_libraries(algoviz ${BENCH_LIBS} imgui)
+# aaudio: the NDK's built-in low-latency audio API used by the ASMR synth
+# (viz/audio_engine.cpp). No third-party audio dependency.
+target_link_libraries(algoviz ${BENCH_LIBS} imgui aaudio)
 harden_target(algoviz)
 # jni.cpp uses [[maybe_unused]] params via JNIEnv conventions; -Wpedantic
 # can flag them in some clang versions. The harden_target options already

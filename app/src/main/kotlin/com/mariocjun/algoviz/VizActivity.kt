@@ -28,6 +28,8 @@ class VizActivity : AppCompatActivity() {
     private external fun nativeSurfaceChanged(width: Int, height: Int, density: Float)
     private external fun nativeDrawFrame()
     private external fun nativeOnTouch(action: Int, x: Float, y: Float)
+    private external fun nativeAudioResume()
+    private external fun nativeAudioPause()
     private external fun nativeOnDestroy()
 
     private lateinit var glView: GLSurfaceView
@@ -63,9 +65,13 @@ class VizActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         glView.onResume()
+        // AudioEngine lifecycle follows the Activity (UI thread); it is built to
+        // accept note() from the GL thread concurrently with start()/stop().
+        nativeAudioResume()
     }
 
     override fun onPause() {
+        nativeAudioPause()
         glView.onPause()
         super.onPause()
     }

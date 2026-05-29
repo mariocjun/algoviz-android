@@ -1,20 +1,21 @@
 // JNI bridge for the ImGui sort visualizer (VizActivity).
 //
 // Architecture note (why this file exists instead of imgui_impl_android):
-// ImGui's stock Android backend (imgui_impl_android.cpp) reads input from the
-// android_native_app_glue input queue — but this template deliberately has no
-// NativeActivity / native_app_glue (see CLAUDE.md). So we run ImGui inside a
-// Kotlin-owned GLSurfaceView and provide our OWN minimal platform layer here:
-//   - the GLES3 RENDERER backend (imgui_impl_opengl3) is reused as-is;
-//   - the PLATFORM side (display size, delta time, mouse/touch input) is fed
-//     from JNI calls that VizActivity issues on the GL thread.
+// ImGui's stock Android backend reads input from android_native_app_glue — but
+// this template has no NativeActivity (see CLAUDE.md). So ImGui runs inside a
+// Kotlin-owned GLSurfaceView with the GLES3 RENDERER backend
+// (imgui_impl_opengl3) and a minimal CUSTOM platform layer fed from JNI here.
 //
-// All ImGui calls happen on the GLSurfaceView render thread. Touch events
-// originate on the UI thread but VizActivity forwards them via
-// GLSurfaceView.queueEvent(), so nativeOnTouch also runs on the GL thread —
-// no locking needed around the single global ImGui context.
+// Threads:
+//   - GL thread (GLSurfaceView render thread): surfaceCreated/Changed/drawFrame
+//     /onTouch — owns the ImGui context and the VizApp (g_app). Touch is hopped
+//     here via GLSurfaceView.queueEvent so the context stays single-threaded.
+//   - UI thread: audioResume/audioPause — drive the global AudioEngine, whose
+//     lifecycle follows the Activity. The engine is built to take note()
+//     (GL thread, lock-free) concurrently with start()/stop() (UI thread).
 
-#include "sort_visualizer.h"
+#include "audio_engine.h"
+#include "viz_app.h"
 
 #include "imgui.h"
 #include "backends/imgui_impl_opengl3.h"
@@ -32,10 +33,12 @@
 
 namespace {
 
-std::unique_ptr<viz::SortVisualizer> g_viz;
-bool g_context_created = false;   // ImGui context exists (survives GL ctx loss)
-bool g_gl_inited = false;         // imgui_impl_opengl3 device objects valid
-bool g_style_scaled = false;      // ScaleAllSizes applied once
+viz::AudioEngine g_audio;                 // lifecycle driven by Activity resume/pause
+std::unique_ptr<viz::VizApp> g_app;       // owned + used on the GL thread
+
+bool g_context_created = false;
+bool g_gl_inited = false;
+bool g_style_scaled = false;
 float g_scale = 2.5f;
 std::chrono::steady_clock::time_point g_last_frame;
 bool g_have_last_frame = false;
@@ -50,7 +53,6 @@ float frame_dt_seconds() {
     const std::chrono::duration<float> d = now - g_last_frame;
     g_last_frame = now;
     const float dt = d.count();
-    // Clamp: a long pause (app backgrounded) shouldn't produce a huge dt.
     if (dt <= 0.0f || dt > 0.25f) return 1.0f / 60.0f;
     return dt;
 }
@@ -65,16 +67,14 @@ Java_com_mariocjun_algoviz_VizActivity_nativeSurfaceCreated(JNIEnv* /*env*/, job
         IMGUI_CHECKVERSION();
         ImGui::CreateContext();
         ImGuiIO& io = ImGui::GetIO();
-        io.IniFilename = nullptr;   // no imgui.ini on Android (no writable cwd)
+        io.IniFilename = nullptr;
         io.LogFilename = nullptr;
         ImGui::StyleColorsDark();
-        g_viz = std::make_unique<viz::SortVisualizer>();
+        g_app = std::make_unique<viz::VizApp>(&g_audio);
         g_context_created = true;
-        VIZLOGI("ImGui context created");
+        VIZLOGI("ImGui context + VizApp created");
     }
     // (Re)create GL device objects for the current (possibly new) GL context.
-    // GLSurfaceView calls onSurfaceCreated again after a context loss
-    // (app resume), at which point the previous GL objects are invalid.
     if (g_gl_inited) {
         ImGui_ImplOpenGL3_Shutdown();
         g_gl_inited = false;
@@ -98,10 +98,10 @@ Java_com_mariocjun_algoviz_VizActivity_nativeSurfaceChanged(
     if (g_scale < 1.0f) g_scale = 1.0f;
     if (g_scale > 4.0f) g_scale = 4.0f;
     if (!g_style_scaled) {
-        ImGui::GetStyle().ScaleAllSizes(g_scale);   // one-shot: widget metrics
+        ImGui::GetStyle().ScaleAllSizes(g_scale);
         g_style_scaled = true;
     }
-    io.FontGlobalScale = g_scale;                    // crisp-ish default font on hi-DPI
+    io.FontGlobalScale = g_scale;
     glViewport(0, 0, width, height);
     VIZLOGI("surfaceChanged %dx%d density=%.2f", width, height, static_cast<double>(density));
 }
@@ -116,7 +116,7 @@ Java_com_mariocjun_algoviz_VizActivity_nativeDrawFrame(JNIEnv* /*env*/, jobject 
 
     ImGui_ImplOpenGL3_NewFrame();
     ImGui::NewFrame();
-    if (g_viz) g_viz->draw();
+    if (g_app) g_app->draw();
     ImGui::Render();
 
     glViewport(0, 0, static_cast<int>(io.DisplaySize.x), static_cast<int>(io.DisplaySize.y));
@@ -125,9 +125,7 @@ Java_com_mariocjun_algoviz_VizActivity_nativeDrawFrame(JNIEnv* /*env*/, jobject 
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 }
 
-// action: 0 = down, 1 = move, 2 = up (mirrors VizActivity's mapping of
-// MotionEvent ACTION_DOWN/MOVE/UP). Touch is presented to ImGui as the left
-// mouse button.
+// action: 0 = down, 1 = move, 2 = up.
 JNIEXPORT void JNICALL
 Java_com_mariocjun_algoviz_VizActivity_nativeOnTouch(
     JNIEnv* /*env*/, jobject /*thiz*/, jint action, jfloat x, jfloat y) {
@@ -142,9 +140,18 @@ Java_com_mariocjun_algoviz_VizActivity_nativeOnTouch(
 }
 
 JNIEXPORT void JNICALL
+Java_com_mariocjun_algoviz_VizActivity_nativeAudioResume(JNIEnv* /*env*/, jobject /*thiz*/) {
+    g_audio.start();
+}
+
+JNIEXPORT void JNICALL
+Java_com_mariocjun_algoviz_VizActivity_nativeAudioPause(JNIEnv* /*env*/, jobject /*thiz*/) {
+    g_audio.stop();
+}
+
+JNIEXPORT void JNICALL
 Java_com_mariocjun_algoviz_VizActivity_nativeOnDestroy(JNIEnv* /*env*/, jobject /*thiz*/) {
-    // Best-effort teardown. The GL context may already be gone here (Activity
-    // destroyed), so only shut down the backend if we believe it's valid.
+    g_audio.stop();
     if (g_gl_inited) {
         ImGui_ImplOpenGL3_Shutdown();
         g_gl_inited = false;
@@ -154,7 +161,7 @@ Java_com_mariocjun_algoviz_VizActivity_nativeOnDestroy(JNIEnv* /*env*/, jobject 
         g_context_created = false;
         g_style_scaled = false;
         g_have_last_frame = false;
-        g_viz.reset();
+        g_app.reset();
         VIZLOGI("ImGui context destroyed");
     }
 }
