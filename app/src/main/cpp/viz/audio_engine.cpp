@@ -32,6 +32,8 @@ constexpr float kVoiceAmp = 0.26f;
 constexpr float kGlideTau = 0.045f;         // ~45 ms upward pitch glide ("bloop")
 constexpr float kGlideStart = 0.7937f;      // start −4 semitones below target (2^(-4/12))
 constexpr float kLowpassHz = 2600.0f;       // master one-pole LP cutoff
+constexpr float kMinOnsetSeconds = 0.09f;   // >=90 ms between note onsets (~11/s
+                                            // max) so notes separate, never fuse
 
 float pentatonic_hz(float value01) {
     if (value01 < 0.0f) value01 = 0.0f;
@@ -112,6 +114,8 @@ void AudioEngine::stop() {
     // Silence any lingering voices so a later start() begins clean.
     for (Voice& v : voices_) v.active = false;
     lp_state_ = 0.0f;
+    has_pending_ = false;
+    frames_since_onset_ = 1 << 20;   // let the first note after a restart fire at once
     head_.store(0, std::memory_order_relaxed);
     tail_.store(0, std::memory_order_relaxed);
 }
@@ -140,8 +144,17 @@ void AudioEngine::note(float value01) {
 }
 
 void AudioEngine::trigger(float freq) {
-    Voice& v = voices_[next_voice_];
-    next_voice_ = (next_voice_ + 1) % kVoices;   // round-robin steal
+    // Prefer a free voice; otherwise steal the QUIETEST (most-decayed) one. Blind
+    // round-robin used to cut off notes that were still prominent, which is what
+    // made dense passages rasp and restart instead of ringing out cleanly.
+    int pick = 0;
+    float quietest = 1e30f;
+    for (int i = 0; i < kVoices; ++i) {
+        if (!voices_[i].active) { pick = i; break; }
+        const float loud = voices_[i].env * voices_[i].amp;
+        if (loud < quietest) { quietest = loud; pick = i; }
+    }
+    Voice& v = voices_[pick];
     v.phase = 0.0f;
     v.inc_target = freq / static_cast<float>(sample_rate_);
     v.inc = v.inc_target * kGlideStart;   // start a few semitones low, glide up
@@ -152,11 +165,19 @@ void AudioEngine::trigger(float freq) {
 }
 
 void AudioEngine::render(float* out, int32_t num_frames) {
-    // Pull pending notes (bounded so a flood can't starve rendering).
-    for (int i = 0; i < kVoices; ++i) {
-        float f;
-        if (!ring_pop(f)) break;
-        trigger(f);
+    // Onset throttle. Collapse the whole backlog to the most recent pitch and
+    // fire AT MOST one note per kMinOnsetSeconds. The engine flags a note every
+    // UI frame (~60/s); playing all of them is the "buzz" — notes never separate
+    // and voices restart on top of each other. Spacing the onsets makes it an
+    // ASMR trickle that still tracks the sort.
+    { float f; while (ring_pop(f)) { pending_freq_ = f; has_pending_ = true; } }
+    const int min_onset_frames =
+        static_cast<int>(kMinOnsetSeconds * static_cast<float>(sample_rate_));
+    if (frames_since_onset_ < (1 << 24)) frames_since_onset_ += num_frames;
+    if (has_pending_ && frames_since_onset_ >= min_onset_frames) {
+        trigger(pending_freq_);
+        has_pending_ = false;
+        frames_since_onset_ = 0;
     }
 
     const float sr_f = static_cast<float>(sample_rate_);

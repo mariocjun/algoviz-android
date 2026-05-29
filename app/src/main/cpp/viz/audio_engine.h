@@ -9,6 +9,9 @@
 //      and exponential decay — rounded, click-free, bell/marimba-like.
 //   3. Polyphony cap + tanh soft-limiter — dense passages stay smooth, never
 //      clip into harshness.
+//   4. Onset throttle + quietest-voice stealing — onsets are spaced (~11/s max)
+//      and a new note never chops a still-prominent one, so rapid sorting reads
+//      as a separated trickle rather than a fused buzz.
 //
 // Backend: AAudio (NDK built-in, no third-party dep). The audio runs on
 // AAudio's realtime callback thread; the GL/UI thread only ever pushes note
@@ -81,8 +84,13 @@ private:
 
     static constexpr int kVoices = 24;
     Voice voices_[kVoices] = {};
-    uint32_t next_voice_ = 0;          // round-robin voice-steal cursor (audio thread)
     float lp_state_ = 0.0f;            // one-pole low-pass state (audio thread)
+
+    // Onset throttle (audio thread only): collapse the note backlog to the newest
+    // pitch and release it no more often than kMinOnsetSeconds.
+    int frames_since_onset_ = 1 << 20; // large => first note fires immediately
+    float pending_freq_ = 0.0f;        // newest queued pitch awaiting its slot
+    bool has_pending_ = false;
 };
 
 } // namespace viz
