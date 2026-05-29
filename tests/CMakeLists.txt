@@ -39,8 +39,10 @@ set(DOCTEST_WITH_TESTS OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(doctest)
 
 # Helper: each test_*.cpp becomes its own ctest entry.
+# Extra production .cpp sources the test needs to link can be passed after the
+# name (ARGN) — e.g. the headless viz engine, which is its own translation unit.
 function(add_unit_test name)
-    add_executable(${name} ${name}.cpp)
+    add_executable(${name} ${name}.cpp ${ARGN})
     target_include_directories(${name} PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/../app/src/main/cpp)
     target_link_libraries(${name} PRIVATE doctest::doctest)
@@ -51,3 +53,5 @@ add_unit_test(test_json)
 add_unit_test(test_registry)
 add_unit_test(test_sorts)
 add_unit_test(test_sort_registry)
+add_unit_test(test_single_engine
+    ${CMAKE_CURRENT_SOURCE_DIR}/../app/src/main/cpp/viz/single_engine.cpp)

@@ -193,6 +193,7 @@ target_link_libraries(imgui PUBLIC GLESv3 EGL android log)
 # ----------------------------------------------------------------------------
 set(VIZ_SOURCES
     viz/audio_engine.cpp
+    viz/single_engine.cpp
     viz/sort_visualizer.cpp
     viz/race_visualizer.cpp
     viz/viz_app.cpp
