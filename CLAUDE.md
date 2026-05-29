@@ -58,6 +58,14 @@ app/
         sorts.h               6 clean-room sorts as step-yielding coroutines
         sort_registry.h       SortAlgo concept + Sorts tuple + benchmark driver (NDK-free)
         sort_bench.{h,cpp}    per-cluster wrapper (pins core, runs run_all) -> bench registry
+      viz/                    ImGui (GLES3) visual layer (Phase 2/3)
+        viz_jni.cpp           VizActivity JNI + custom ImGui platform layer (no native_app_glue)
+        viz_app.{h,cpp}       controller: top bar (Single/Race/Sound/Vol/Loop) + delegate
+        sort_visualizer.{h,cpp}  single view: rainbow bars + per-frame audio + auto-loop
+        race_visualizer.{h,cpp}  race view: all sorts, aspect-adaptive grid, podium
+        audio_engine.{h,cpp}  AAudio pentatonic ASMR synth (lock-free note ring)
+        palette.h             value -> rainbow hue helper
+docs/icon.svg                 HD graph app icon (adaptive launcher icon in res/)
 tests/                        host doctest unit tests (no NDK): json, registry concept,
                               sort correctness + step-replay, sort registry/benchmark
 scripts/                      build/run/profile/template tooling (see below)
@@ -113,10 +121,12 @@ git tag v1.2.3 && git push origin v1.2.3
 
 ## The AlgoViz sort engine (`app/src/main/cpp/algoviz/`)
 
-This fork ports the *imalgorithm* sorting visualiser onto the template. **Both
-phases are done.** Phase 1 = the headless engine + device benchmark (below).
-Phase 2 = an ImGui/GLES3 visual layer (`app/src/main/cpp/viz/` + `VizActivity`)
-that animates the **same** coroutines — see "The visual layer" below.
+This fork ports the *imalgorithm* sorting visualiser onto the template. **All
+three phases are done.** Phase 1 = the headless engine + device benchmark
+(below). Phase 2 = an ImGui/GLES3 visual layer (`app/src/main/cpp/viz/` +
+`VizActivity`) animating the **same** coroutines. Phase 3 = the addictive/ASMR
+pass (graph icon, pentatonic audio, race mode, rainbow + auto-loop) — see "The
+visual layer" below.
 
 - **Single source of truth = coroutines.** Each sort (`bubble/insertion/
   selection/quick/merge/heap` in `sorts.h`) is a `Generator<Step>` that mutates
@@ -159,8 +169,7 @@ Phase 2: an ImGui (GLES3) animated bar visualizer, launched from MainActivity's
   `GLSurfaceView.queueEvent` (single-threaded ImGui context, no locks).
 - **Driven by the SAME coroutines.** `viz/sort_visualizer.cpp` picks an
   algorithm by index through `algoviz::make_sort_by_index` (a fold over the
-  `Sorts` tuple) and pulls `Step`s to animate — bars colored by the live Step:
-  compare/swap (red), pivot (purple), sorted (green). Engine and UI can't drift.
+  `Sorts` tuple) and pulls `Step`s to animate. Engine and UI can't drift.
 - **ImGui is FetchContent'd** (pinned tag) into a dedicated static lib built
   with relaxed/SYSTEM warnings; only the APK `.so` links it (+ `GLESv3`/`EGL`),
   never the headless `cppbench` ELF.
@@ -168,6 +177,27 @@ Phase 2: an ImGui (GLES3) animated bar visualizer, launched from MainActivity's
   (content-desc automation) works for MainActivity's real `Button`s but is blind
   to the ImGui UI (the whole `GLSurfaceView` is one opaque node). To script the
   visualizer, use pixel taps (`adb shell input tap x y`) + `screencap` to verify.
+
+### Phase 3 — the addictive / ASMR pass (validated on the N975F, both orientations)
+
+- **App icon** — a 6-node graph (one per sort) as an adaptive VectorDrawable
+  launcher icon (`res/`) + HD `docs/icon.svg`.
+- **ASMR audio** (`viz/audio_engine.*`, AAudio, no dep) — realtime sine voices
+  on AAudio's callback thread; the GL thread feeds note frequencies through a
+  lock-free SPSC ring. **Pentatonic value→pitch** quantization makes any density
+  of notes consonant; soft attack + exp decay + tanh limiter keep it rounded and
+  click-free at any speed. One note/frame (single) / round-robin (race) so it
+  stays musical, never a wall of noise. Lifecycle: `nativeAudioResume/Pause` from
+  `VizActivity` (UI thread) drive a *global* engine; `note()` is lock-free from
+  the GL thread. Sound + volume in the top bar.
+- **Race mode** (`viz/race_visualizer.*`) — every sort races the SAME shuffle;
+  the grid auto-sizes from the viewport aspect (2×3 portrait / 4×2 landscape) to
+  fit the max algorithms, with a finish-order **podium** (gold/silver/bronze).
+- **Rainbow + loop** — bars are colored by VALUE→hue, so a sorted array is a
+  smooth rainbow (the payoff); active accesses flash white. Auto-loop reshuffles
+  and reruns on completion — endless ambient. `VizApp` (`viz/viz_app.*`) is the
+  controller: fullscreen window + top bar (Single/Race/Sound/Vol/Loop) →
+  delegates to the active view.
 
 ## Extending: add a benchmark
 
