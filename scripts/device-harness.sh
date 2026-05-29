@@ -129,14 +129,25 @@ resolve_cppbench() {
     local p="${CPPBENCH:-$REPO/build/bench-arm64/cppbench}"
     if [ -f "$p" ]; then echo "$p"; return 0; fi
     # Fall back to the latest release asset.
-    local dl="$REPO/build/cppbench-release"
-    mkdir -p "$(dirname "$dl")"
+    local dldir="$REPO/build"
+    local dl="$dldir/cppbench-release"
+    mkdir -p "$dldir"
     echo "cppbench not at $p — downloading latest release asset..." >&2
     local slug; slug=$(repo_slug)
+    # Two MSYS/git-bash gotchas handled here:
+    #   1. gh's `--output` is ignored when `--pattern` is used, so download into
+    #      a dir; the asset keeps its release name (cppbench-vX.Y.Z-arm64-v8a).
+    #   2. gh.exe is a NATIVE Windows binary — hand it an MSYS '/c/...' dir and it
+    #      silently writes nowhere (exit 0, no file). Convert with cygpath; on
+    #      Linux/macOS cygpath is absent and we use the path as-is.
+    rm -f "$dldir"/cppbench-*-arm64-v8a
+    local windir; windir="$(cygpath -w "$dldir" 2>/dev/null || echo "$dldir")"
     gh release download ${slug:+--repo "$slug"} --pattern 'cppbench-*-arm64-v8a' \
-        --output "$dl" --clobber >&2 \
+        --dir "$windir" --clobber >&2 \
         || { echo "FAIL: gh release download failed (auth? set GH_TOKEN / REPO_SLUG)" >&2; exit 1; }
-    [ -f "$dl" ] || { echo "FAIL: download did not produce $dl" >&2; exit 1; }
+    local got; got=$(ls -t "$dldir"/cppbench-*-arm64-v8a 2>/dev/null | head -1)
+    [ -f "$got" ] || { echo "FAIL: download produced no cppbench-*-arm64-v8a asset in $dldir" >&2; exit 1; }
+    cp -f "$got" "$dl"
     echo "$dl"
 }
 
