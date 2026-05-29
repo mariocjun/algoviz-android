@@ -48,7 +48,7 @@ Checks: >
 WarningsAsErrors: ''
 
 # Only analyse our own headers; ignore NDK sysroot and STL headers.
-HeaderFilterRegex: '.*bench/.*\.h$'
+HeaderFilterRegex: '.*(bench|algoviz)/.*\.h$'
 
 # Inherit the project's .clang-format (we don't have one yet — when added,
 # this picks it up automatically).

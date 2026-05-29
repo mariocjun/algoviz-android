@@ -8,8 +8,18 @@
 namespace bench {
 
 inline uint64_t now_ns() {
+    // CLOCK_MONOTONIC_RAW (Linux/Android) isn't slewed by NTP, which is what we
+    // want for benchmarking. Host-test toolchains like MinGW only define
+    // CLOCK_MONOTONIC; fall back there so the platform-agnostic bench headers
+    // (exercised by tests/) compile everywhere. On Android/Linux the RAW clock
+    // is always used.
+#ifdef CLOCK_MONOTONIC_RAW
+    constexpr clockid_t kClock = CLOCK_MONOTONIC_RAW;
+#else
+    constexpr clockid_t kClock = CLOCK_MONOTONIC;
+#endif
     timespec ts{};
-    clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
+    clock_gettime(kClock, &ts);
     return static_cast<uint64_t>(ts.tv_sec) * 1'000'000'000ull
          + static_cast<uint64_t>(ts.tv_nsec);
 }

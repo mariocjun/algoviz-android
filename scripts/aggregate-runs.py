@@ -30,6 +30,12 @@ SCALAR_METRICS = {
     "dot_int8": ("dot_int8", ["sdot_gops_per_core", "udot_gops_per_core"]),
     "i8mm":     ("i8mm",     ["smmla_gops_per_core"]),
     "sve2":     ("sve2",     ["fp32_gflops_per_core"]),
+    # Sort engine throughput (million coroutine steps/sec) per algorithm. The
+    # flat <name>_msteps_per_sec keys live under per_cluster[].sort — see
+    # algoviz/sort_registry.h::run_all.
+    "sort":     ("sort",     ["bubble_msteps_per_sec", "insertion_msteps_per_sec",
+                              "selection_msteps_per_sec", "quick_msteps_per_sec",
+                              "merge_msteps_per_sec", "heap_msteps_per_sec"]),
 }
 
 

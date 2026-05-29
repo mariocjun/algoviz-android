@@ -28,6 +28,8 @@
 #include "cpu/sustained.h"
 #include "cpu/perf_counters.h"
 
+#include "../algoviz/sort_bench.h"
+
 #include <concepts>
 #include <cstddef>
 #include <string>
@@ -185,12 +187,31 @@ struct PerfCountersBench {
     }
 };
 
+struct SortBench {
+    static constexpr const char* name = "sort";
+    using Config = algoviz::SortBenchConfig;
+    static Config make_config(const Args& a) {
+        Config c;
+        if (a.elems > 0) c.n = a.elems;   // --elems = array size N
+        if (a.iters > 0) c.trials = a.iters;
+        return c;
+    }
+    // Opt-in: the O(n^2) algorithms (bubble/selection/insertion) yield tens of
+    // millions of steps at the default N=4096, so it's a few seconds per
+    // cluster — too heavy for the default suite. Run with --filter=sort.
+    static bool opt_in() { return true; }
+    bench::Json run_per_cluster(const Config& cfg,
+                                const std::vector<bench::CpuCluster>& cl) const {
+        return algoviz::run_sort_benchmark_per_cluster(cfg, cl);
+    }
+};
+
 // -- Registry tuple ---------------------------------------------------------
 // Adding a benchmark: write the wrapper above, then add its type here.
 // The Benchmark<T> concept blocks compilation if the wrapper is malformed.
 using Registry = std::tuple<StreamBench, LatencyBench, NeonFmaBench,
                             DotInt8Bench, I8mmBench, Sve2Bench,
-                            PerfCountersBench, SustainedBench>;
+                            PerfCountersBench, SortBench, SustainedBench>;
 
 // Static check: every wrapper in Registry satisfies Benchmark<T>.
 template <typename... Bs>

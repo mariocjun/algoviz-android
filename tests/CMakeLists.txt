@@ -49,3 +49,5 @@ endfunction()
 
 add_unit_test(test_json)
 add_unit_test(test_registry)
+add_unit_test(test_sorts)
+add_unit_test(test_sort_registry)

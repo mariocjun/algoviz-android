@@ -51,7 +51,14 @@ app/
                               perf_counters, sustained
         sensors/ camera/ stream/   ASensorManager enum, Camera2 enum, NDJSON streamer
       bench_main.cpp          standalone cppbench ELF entry (CLI)
-tests/                        host doctest unit tests (no NDK): json, registry concept
+      algoviz/                sort-visualisation engine (the imalgorithm port)
+        generator.h           hand-rolled C++20 Generator<T> coroutine (libc++17: no std::generator)
+        step.h                Step (Compare/Swap/Set/Pivot) — the mutation-log unit
+        sorts.h               6 clean-room sorts as step-yielding coroutines
+        sort_registry.h       SortAlgo concept + Sorts tuple + benchmark driver (NDK-free)
+        sort_bench.{h,cpp}    per-cluster wrapper (pins core, runs run_all) -> bench registry
+tests/                        host doctest unit tests (no NDK): json, registry concept,
+                              sort correctness + step-replay, sort registry/benchmark
 scripts/                      build/run/profile/template tooling (see below)
 .github/workflows/            smoke, quality, tests, release, device-test
 ```
@@ -102,6 +109,38 @@ git tag v1.2.3 && git push origin v1.2.3
 - **Single-run mobile numbers are noise** (DVFS + scheduler). Any perf claim
   needs `full-stats` (≥5 runs, median + CV); root + `performance` governor for
   clean numbers.
+
+## The AlgoViz sort engine (`app/src/main/cpp/algoviz/`)
+
+This fork ports the *imalgorithm* sorting visualiser onto the template. **Phase
+1 (done): the headless engine + device benchmark.** Phase 2 (later): an ImGui/
+GLES visual layer driven by the same coroutines.
+
+- **Single source of truth = coroutines.** Each sort (`bubble/insertion/
+  selection/quick/merge/heap` in `sorts.h`) is a `Generator<Step>` that mutates
+  its `std::vector<int>&` in place *and* `co_yield`s a `Step` per
+  comparison/swap/write. The benchmark drains that stream and counts ops + times
+  it; Phase 2's renderer will consume the *same* stream to animate. No algorithm
+  is written twice.
+- **The mutation-log invariant (tested):** replaying only the `Swap`/`Set` steps
+  onto a fresh copy of the input reproduces the coroutine's sorted array.
+  `Compare`/`Pivot` are pure highlights. This is the contract the visual layer
+  relies on — `tests/test_sorts.cpp` "step replay" enforces it.
+- **NDK-free core.** `generator.h`/`step.h`/`sorts.h`/`sort_registry.h` depend
+  only on libc++ + `bench/json.h`+`bench/timer.h`, so the host CI unit-tests the
+  *real* engine (1400+ assertions), not a reimplementation. Only
+  `sort_bench.cpp` (cpu-pinning per cluster) touches `bench/affinity.h`.
+- **`SortAlgo<T>` mirrors `Benchmark<T>`:** concept + `Sorts` tuple + fold
+  dispatch. Add a sort = one wrapper struct (name/complexity/stable/`make`) +
+  one tuple entry; a malformed wrapper is a compile error.
+- **Wired as the `sort` benchmark** (opt-in: the O(n²) sorts yield tens of
+  millions of steps). Run it: `--filter=sort` (`--elems=N` sets array size,
+  `--iters=N` the trial count). Reports per algorithm: comparisons, swaps,
+  writes, total_steps, median_ms, `msteps_per_sec` (coroutine-step throughput =
+  the metric the visual engine actually pays), and a `correct` self-check.
+- **Why coroutines and not a templated `Observer`:** the visualiser needs to
+  *pause* mid-sort (one step per frame); a pull-generator is the natural fit and
+  the reason `std::generator` had to be hand-rolled (NDK r26b ships libc++17).
 
 ## Extending: add a benchmark
 

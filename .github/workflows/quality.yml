@@ -50,7 +50,7 @@ jobs:
             -L 100 \
             -a 6 \
             app/src/main/cpp/bench \
-            app/src/main/cpp/main.cpp \
+            app/src/main/cpp/algoviz \
             | tee reports/lizard.txt
 
       - name: Run lizard (XML for tooling)
@@ -63,7 +63,7 @@ jobs:
             -a 6 \
             --xml \
             app/src/main/cpp/bench \
-            app/src/main/cpp/main.cpp \
+            app/src/main/cpp/algoviz \
             > reports/lizard.xml || true
 
       - name: Upload reports
@@ -127,9 +127,9 @@ jobs:
       - name: Run clang-tidy on bench/
         run: |
           mkdir -p reports
-          # Limit to bench/ — main.cpp is mostly NDK-glue boilerplate that
-          # would just produce noisy 'pro-bounds' warnings.
-          SOURCES=$(find app/src/main/cpp/bench -name '*.cpp' | sort)
+          # Analyse bench/ + algoviz/ (the sort engine). Diagnostics are
+          # informational (the C++ build's -Werror= gates are authoritative).
+          SOURCES=$(find app/src/main/cpp/bench app/src/main/cpp/algoviz -name '*.cpp' | sort)
           echo "Analysing $(echo "$SOURCES" | wc -l) sources..."
           set +e
           "${{ steps.tidy.outputs.tidy }}" \

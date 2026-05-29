@@ -116,7 +116,8 @@ set(BENCH_SOURCES
     bench/cpu/perf_counters.cpp
     bench/sensors/sensors.cpp
     bench/camera/camera.cpp
-    bench/stream/streamer.cpp)
+    bench/stream/streamer.cpp
+    algoviz/sort_bench.cpp)
 
 set(BENCH_LIBS android camera2ndk log)
 
