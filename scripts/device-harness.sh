@@ -1,20 +1,18 @@
 #!/usr/bin/env bash
 # device-harness.sh — persistent rooted-device test harness for cppbench.
 #
-# Generalises the device-session patterns from the redacted-project project's
-# tools/csi-patch/flash_f2.sh (device-identity gate, asroot exec, recovery-slot
-# root activation, verify-every-step) into a reusable rig for installing and
-# benchmarking the algoviz app on PHYSICAL devices. The official tester
-# is the rooted SM-N975F (Exynos 9825); root unlocks PMU counters
+# A reusable rooted-device session pattern (device-identity gate, asroot exec,
+# recovery-slot root activation, verify-every-step) for installing and
+# benchmarking the algoviz app on PHYSICAL devices. Root unlocks PMU counters
 # (perf_event_open via CAP_PERFMON) and cpufreq governor pinning, neither of
-# which is available on the unrooted S24 Ultra.
+# which is available on an unrooted device.
 #
-# SAFETY — mirrors flash_f2.sh:
+# SAFETY:
 #   - Refuses to act on a device whose codename isn't in the registry.
-#   - NEVER touches WiFi firmware / bootloader (this harness is OS/app level
-#     only: reboot-recovery, adb install, su exec, cpufreq governor). All
-#     reversible. The N975U (d2q) control device is registered root_method=none
-#     so it's never rooted/modified.
+#   - NEVER touches firmware / bootloader (this harness is OS/app level only:
+#     reboot-recovery, adb install, su exec, cpufreq governor). All reversible.
+#     Any device not in the registry is treated as root_method=none (app-level
+#     only), so it is never rooted/modified.
 #   - Governor changes are restored on 'restore'/'full'; they also reset on
 #     any reboot.
 #
@@ -39,30 +37,31 @@ RESULTS="$REPO/results"
 REMOTE=/data/local/tmp/cppbench
 
 # --- Device registry --------------------------------------------------------
-# serial|codename|label|root_method
+# Real device identifiers are PRIVATE: they live in an untracked, gitignored
+# local file so they never enter version control. Copy the example and fill in:
+#   cp scripts/device-registry.local.sh.example scripts/device-registry.local.sh
+# (CI sets ROOTED_* from repo variables instead.) Without either, every device
+# is treated as root_method=none (app-level only).
 #   root_method: recovery = Magisk in recovery slot, `adb reboot recovery`
-#                          activates root (N975F)
+#                          activates root
 #                magisk   = `su` works after a normal boot
-#                none     = no root; app-level testing only (S24 Ultra, N975U)
+#                none     = no root; app-level testing only
 # Codename is re-verified at runtime against the device; a mismatch aborts.
-device_codename() { # serial -> expected codename
-    case "$1" in
-        REDACTED_SERIAL|REDACTED_HOST:5555) echo "d2s" ;;   # N975F Exynos (rooted target)
-        *) echo "" ;;
-    esac
+ROOTED_SERIAL="${ROOTED_SERIAL:-}"              # USB serial of the rooted target
+ROOTED_ADDR="${ROOTED_ADDR:-}"                  # network-adb address host:port, if any
+ROOTED_CODENAME="${ROOTED_CODENAME:-}"          # expected ro.product.device
+ROOTED_ROOT_METHOD="${ROOTED_ROOT_METHOD:-recovery}"
+ROOTED_LABEL="${ROOTED_LABEL:-device}"
+[ -f "$HERE/device-registry.local.sh" ] && source "$HERE/device-registry.local.sh"
+
+is_rooted_target() {  # returns 0 if $1 is the configured rooted device
+    { [ -n "$ROOTED_SERIAL" ] && [ "$1" = "$ROOTED_SERIAL" ]; } && return 0
+    { [ -n "$ROOTED_ADDR" ] && [ "$1" = "$ROOTED_ADDR" ]; } && return 0
+    return 1
 }
-device_root_method() {
-    case "$1" in
-        REDACTED_SERIAL|REDACTED_HOST:5555) echo "recovery" ;;
-        *) echo "none" ;;
-    esac
-}
-device_label() {
-    case "$1" in
-        REDACTED_SERIAL|REDACTED_HOST:5555) echo "N975F-Exynos9825" ;;
-        *) echo "unknown" ;;
-    esac
-}
+device_codename()    { is_rooted_target "$1" && echo "$ROOTED_CODENAME" || echo ""; }
+device_root_method() { is_rooted_target "$1" && echo "$ROOTED_ROOT_METHOD" || echo "none"; }
+device_label()       { is_rooted_target "$1" && echo "$ROOTED_LABEL" || echo "unknown"; }
 
 adbx()    { adb -s "$SERIAL" "$@"; }
 asroot()  { adb -s "$SERIAL" shell "su -c '$1'"; }
@@ -293,7 +292,7 @@ probe() {
 
 # --- main -------------------------------------------------------------------
 CMD="${1:-}"; shift || true
-SERIAL="${1:-REDACTED_SERIAL}"; shift || true
+SERIAL="${1:-${ROOTED_SERIAL:-}}"; shift || true
 
 case "$CMD" in
     probe)     probe ;;

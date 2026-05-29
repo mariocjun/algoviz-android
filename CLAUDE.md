@@ -6,9 +6,9 @@ profiler. If you're an agent that just landed here, read this top-to-bottom
 once; it's the map. Cross-tool agents: see `AGENTS.md`. Invokable capabilities:
 `.claude/skills/`.
 
-> Everything down to "Author's device rig" is **generic** — true for any fork.
-> The fenced section at the very bottom is the original author's specific
-> hardware and is the only part you should replace when you fork.
+> Everything down to "Physical device rig" is **generic** — true for any fork.
+> The section at the very bottom is environment-specific config; the real device
+> identifiers live in an untracked local file (gitignored), never in git.
 
 ## What this is
 
@@ -236,18 +236,20 @@ ui-test) · `ui_tap.py` (locate UI by content-desc, not coordinates) ·
 
 ---
 
-<!-- ================= AUTHOR'S DEVICE RIG — replace for your project ================= -->
-## Author's device rig (example — replace when you fork)
+<!-- ================= DEVICE RIG — configure for your project ================= -->
+## Physical device rig (configure for your project)
 
-The original author's physical tester is a **rooted SM-N975F (Exynos 9825)**,
-serial `REDACTED_SERIAL` (Tailscale `REDACTED_HOST:5555`), rooted via Magisk in the
-recovery slot (lineage: a sibling WiFi-CSI project's `flash_f2.sh`). The
-`device-harness.sh` device registry, the `device-test.yml` runner labels
-(`self-hosted, n975f`), and the baseline below are all specific to that rig.
-**If you fork:** edit the `device-harness.sh` registry to your device(s), or
+The optional device-test rig drives a real rooted Android phone (root unlocks PMU
+counters via `perf_event_open`/CAP_PERFMON and cpufreq governor pinning). The
+real device identifiers — serial / network-adb address / codename — are kept in
+an **untracked** local file (`scripts/device-registry.local.sh`, gitignored) so
+they never enter version control; see `scripts/device-registry.local.sh.example`.
+The CI runner label and device serial (a repo variable `DEVICE_SERIAL`) are
+likewise environment-specific.
+**If you fork:** create your `device-registry.local.sh`, or
 `init-template.sh --minimal` to remove the device rig entirely.
 
-Calibrated Exynos 9825 baseline (root, `performance` governor, median of 7):
+Example calibrated Exynos 9825 baseline (root, `performance` governor, median of 7):
 
 | metric | A55 @1.95G | A75 @2.40G | M4 @2.73G |
 |---|---|---|---|
@@ -257,11 +259,11 @@ Calibrated Exynos 9825 baseline (root, `performance` governor, median of 7):
 | IPC (PMU, FMA loop) | 1.25 | 1.66 | 1.67 |
 
 Finding: the Cortex-A75 has **half-rate DotProd** (0.5 SDOT/cycle vs A55's 1.0,
-M4's 2.0) — real, reproducible (CV 0%), not measurement noise. Self-hosted
-runner `redacted-runner`; persisted via a current-user logon Task Scheduler task,
-or `svc.cmd install` as admin for a true service.
+M4's 2.0) — real, reproducible (CV 0%), not measurement noise. A self-hosted
+runner can be persisted via a current-user logon Task Scheduler task, or
+`svc.cmd install` as admin for a true service.
 
-## Local dev environment (author)
+## Local dev environment
 
 Windows + git-bash/MSYS2; Android Studio is the supported IDE (CLion's Android
 support is limited). Build runs against NDK 26.1.10909125.

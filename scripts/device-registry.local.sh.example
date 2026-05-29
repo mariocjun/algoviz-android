@@ -1,0 +1,13 @@
+# Copy to device-registry.local.sh (which is gitignored) and fill in YOUR
+# device. These identifiers stay LOCAL — they are never committed.
+#
+#   cp scripts/device-registry.local.sh.example scripts/device-registry.local.sh
+#
+# device-harness.sh sources the .local.sh file (if present) to learn which
+# device is the rooted target. Without it, every device is treated as
+# root_method=none (app-level testing only — no root, no PMU, no governor pin).
+ROOTED_SERIAL=""                # USB serial from `adb devices`, e.g. ABCD1234
+ROOTED_ADDR=""                  # network-adb address host:port, if you use one
+ROOTED_CODENAME=""              # ro.product.device (getprop) — re-verified at runtime
+ROOTED_ROOT_METHOD="recovery"   # recovery | magisk | none
+ROOTED_LABEL="device"           # used in results/ filenames

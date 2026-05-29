@@ -7,6 +7,9 @@
 .claude/settings.json
 local.properties
 .DS_Store
+
+# Real device identifiers (serial / address / codename) stay LOCAL — never commit.
+scripts/device-registry.local.sh
 build/
 .cxx/
 captures/

@@ -1,9 +1,8 @@
-name: Physical device test (N975F)
+name: Physical device test
 
-# Runs the cppbench suite on the REAL rooted SM-N975F (Exynos 9825) via a
-# self-hosted runner on the dev PC. This is the "official physical tester":
-# root unlocks PMU counters + cpufreq governor pinning that the GitHub-hosted
-# x86_64 emulator (and the unrooted S24 Ultra) can't provide.
+# Runs the cppbench suite on a real rooted Android device via a self-hosted
+# runner. Root unlocks PMU counters + cpufreq governor pinning that the
+# GitHub-hosted x86_64 emulator can't provide.
 #
 # ⚠️ SECURITY — this repo is PUBLIC and self-hosted runners on public repos are
 # risky (a fork PR could run code on the runner machine). This workflow is
@@ -37,7 +36,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: device-test-n975f      # the physical device is a singleton resource
+  group: device-test            # the physical device is a singleton resource
   cancel-in-progress: false     # never interrupt a flash/bench mid-cycle
 
 jobs:
@@ -46,13 +45,21 @@ jobs:
     if: github.repository_owner == 'mariocjun'
     runs-on: [self-hosted, n975f]
     timeout-minutes: 20
+    env:
+      # Device identity comes from repo variables (Settings > Secrets and
+      # variables > Actions > Variables) — never committed. The harness reads
+      # ROOTED_* from these to recognise the rooted target.
+      DEVICE_SERIAL: ${{ vars.DEVICE_SERIAL }}
+      ROOTED_SERIAL: ${{ vars.DEVICE_SERIAL }}
+      ROOTED_CODENAME: ${{ vars.DEVICE_CODENAME }}
+      ROOTED_LABEL: ${{ vars.DEVICE_LABEL }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Device probe (read-only)
         shell: bash
-        run: bash scripts/device-harness.sh probe REDACTED_SERIAL
+        run: bash scripts/device-harness.sh probe "$DEVICE_SERIAL"
 
       - name: Provision cppbench ELF (latest release asset)
         shell: bash
@@ -71,7 +78,7 @@ jobs:
 
       - name: Activate root on the device
         shell: bash
-        run: bash scripts/device-harness.sh root REDACTED_SERIAL
+        run: bash scripts/device-harness.sh root "$DEVICE_SERIAL"
 
       - name: Run benchmark suite (root, performance governor, N runs)
         shell: bash
@@ -79,7 +86,7 @@ jobs:
           FILTER='${{ github.event.inputs.filter }}'
           RUNS='${{ github.event.inputs.runs }}'
           RUNS="${RUNS:-7}"
-          bash scripts/device-harness.sh full-stats REDACTED_SERIAL "$FILTER" "$RUNS"
+          bash scripts/device-harness.sh full-stats "$DEVICE_SERIAL" "$FILTER" "$RUNS"
 
       - name: Provision APK (latest release)
         shell: bash
