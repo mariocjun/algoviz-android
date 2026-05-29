@@ -85,11 +85,27 @@ struct HeapSort {
     static Generator<Step> make(std::vector<int>& a) { return heap_sort(a); }
 };
 
+struct ShellSort {
+    static constexpr const char* name = "shell";
+    static constexpr const char* complexity = "O(n^1.5)";
+    static constexpr bool stable = false;
+    static Generator<Step> make(std::vector<int>& a) { return shell_sort(a); }
+};
+
+struct CocktailSort {
+    static constexpr const char* name = "cocktail";
+    static constexpr const char* complexity = "O(n^2)";
+    static constexpr bool stable = true;
+    static Generator<Step> make(std::vector<int>& a) { return cocktail_sort(a); }
+};
+
 // -- Registry tuple ---------------------------------------------------------
 // Adding an algorithm: write the wrapper above, then add its type here.
-// SortAlgo<T> blocks compilation if a wrapper is malformed.
-using Sorts = std::tuple<BubbleSort, InsertionSort, SelectionSort,
-                         QuickSort, MergeSort, HeapSort>;
+// SortAlgo<T> blocks compilation if a wrapper is malformed. Order groups
+// related algorithms (bubble/cocktail, insertion/shell) and drives both the
+// single-view combo and the race grid; eight fills the race grid (2x4 / 4x2).
+using Sorts = std::tuple<BubbleSort, CocktailSort, InsertionSort, ShellSort,
+                         SelectionSort, QuickSort, MergeSort, HeapSort>;
 
 template <typename... Ss>
 constexpr bool all_sorts(std::tuple<Ss...>*) {

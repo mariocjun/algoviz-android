@@ -61,7 +61,9 @@ struct Named { const char* name; SortFn fn; };
 std::vector<Named> all_algorithms() {
     return {
         {"bubble",    [](std::vector<int>& a) { return bubble_sort(a); }},
+        {"cocktail",  [](std::vector<int>& a) { return cocktail_sort(a); }},
         {"insertion", [](std::vector<int>& a) { return insertion_sort(a); }},
+        {"shell",     [](std::vector<int>& a) { return shell_sort(a); }},
         {"selection", [](std::vector<int>& a) { return selection_sort(a); }},
         {"quick",     [](std::vector<int>& a) { return quick_sort(a); }},
         {"merge",     [](std::vector<int>& a) { return merge_sort(a); }},

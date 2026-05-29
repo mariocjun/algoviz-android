@@ -32,15 +32,17 @@ struct WrongReturn {
 };
 } // namespace
 
-TEST_CASE("the Sorts tuple exposes the six expected algorithms in order") {
+TEST_CASE("the Sorts tuple exposes the eight expected algorithms in order") {
     auto names = all_sort_names();
-    REQUIRE(names.size() == 6);
+    REQUIRE(names.size() == 8);
     CHECK(std::string(names[0]) == "bubble");
-    CHECK(std::string(names[1]) == "insertion");
-    CHECK(std::string(names[2]) == "selection");
-    CHECK(std::string(names[3]) == "quick");
-    CHECK(std::string(names[4]) == "merge");
-    CHECK(std::string(names[5]) == "heap");
+    CHECK(std::string(names[1]) == "cocktail");
+    CHECK(std::string(names[2]) == "insertion");
+    CHECK(std::string(names[3]) == "shell");
+    CHECK(std::string(names[4]) == "selection");
+    CHECK(std::string(names[5]) == "quick");
+    CHECK(std::string(names[6]) == "merge");
+    CHECK(std::string(names[7]) == "heap");
 }
 
 TEST_CASE("SortAlgo concept rejects a malformed wrapper") {
@@ -113,7 +115,7 @@ TEST_CASE("step counts are deterministic for a fixed seed") {
 }
 
 TEST_CASE("make_sort_by_index instantiates the right algorithm and sorts") {
-    CHECK(sort_count() == 6);
+    CHECK(sort_count() == 8);
     auto names = all_sort_names();
     for (std::size_t i = 0; i < sort_count(); ++i) {
         CAPTURE(i);

@@ -191,4 +191,59 @@ inline Generator<Step> heap_sort(std::vector<int>& a) {
     }
 }
 
+// Shell sort: gapped insertion. Halving gap sequence (n/2, n/4, ... 1); within
+// each gap it's insertion sort over the strided subsequence. Distinct, springy
+// visual (elements leap across the array on the big gaps).
+inline Generator<Step> shell_sort(std::vector<int>& a) {
+    auto A = [&a](int k) -> int& { return a[static_cast<std::size_t>(k)]; };
+    const int n = static_cast<int>(a.size());
+    for (int gap = n / 2; gap > 0; gap /= 2) {
+        for (int i = gap; i < n; ++i) {
+            const int key = A(i);
+            int j = i;
+            while (j >= gap) {
+                co_yield Step::compare(j - gap, i);   // a[j-gap] vs the lifted key
+                if (A(j - gap) <= key) break;
+                A(j) = A(j - gap);
+                co_yield Step::set(j, A(j));
+                j -= gap;
+            }
+            A(j) = key;
+            co_yield Step::set(j, key);
+        }
+    }
+}
+
+// Cocktail shaker sort: bidirectional bubble. Each round bubbles the largest to
+// the right, then the smallest to the left, shrinking the active window from
+// both ends — a back-and-forth sweep distinct from plain bubble.
+inline Generator<Step> cocktail_sort(std::vector<int>& a) {
+    auto A = [&a](int k) -> int& { return a[static_cast<std::size_t>(k)]; };
+    const int n = static_cast<int>(a.size());
+    int lo = 0;
+    int hi = n - 1;
+    bool swapped = true;
+    while (swapped && lo < hi) {
+        swapped = false;
+        for (int j = lo; j < hi; ++j) {
+            co_yield Step::compare(j, j + 1);
+            if (A(j) > A(j + 1)) {
+                std::swap(A(j), A(j + 1));
+                co_yield Step::swap(j, j + 1);
+                swapped = true;
+            }
+        }
+        --hi;
+        for (int j = hi; j > lo; --j) {
+            co_yield Step::compare(j - 1, j);
+            if (A(j - 1) > A(j)) {
+                std::swap(A(j - 1), A(j));
+                co_yield Step::swap(j - 1, j);
+                swapped = true;
+            }
+        }
+        ++lo;
+    }
+}
+
 } // namespace algoviz

@@ -97,11 +97,25 @@ void RaceVisualizer::advance() {
 
 void RaceVisualizer::grid_dims(int n, float aspect, int& cols, int& rows) {
     if (n <= 0) { cols = 1; rows = 1; return; }
-    int c = static_cast<int>(std::lround(std::sqrt(static_cast<double>(n) * static_cast<double>(aspect))));
-    if (c < 1) c = 1;
-    if (c > n) c = n;
-    cols = c;
-    rows = (n + c - 1) / c;
+    // Pick the column count that fits all n lanes with the fewest empty cells
+    // and the most square-ish cell for the current viewport aspect. This shrinks
+    // to fit in either orientation: 8 packs as 2x4 (portrait) / 4x2 (landscape)
+    // with no wasted space; 6 as 2x3 / 3x2; etc.
+    int best_cols = 1;
+    double best_score = 1e9;
+    for (int c = 1; c <= n; ++c) {
+        const int r = (n + c - 1) / c;
+        const int empties = c * r - n;
+        const double cell_aspect =
+            static_cast<double>(aspect) * static_cast<double>(r) / static_cast<double>(c);
+        const double score = static_cast<double>(empties) * 4.0 + std::fabs(std::log(cell_aspect));
+        if (score < best_score) {
+            best_score = score;
+            best_cols = c;
+        }
+    }
+    cols = best_cols;
+    rows = (n + best_cols - 1) / best_cols;
 }
 
 void RaceVisualizer::draw_body() {

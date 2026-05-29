@@ -53,10 +53,11 @@ public:
 
 private:
     struct Voice {
-        float phase = 0.0f;   // [0,1)
-        float inc = 0.0f;     // freq / sample_rate
-        float env = 0.0f;     // current envelope amplitude
-        float amp = 0.0f;     // peak amplitude for this note
+        float phase = 0.0f;       // [0,1)
+        float inc = 0.0f;         // current freq / sample_rate
+        float inc_target = 0.0f;  // glide destination (bubble = rising pitch)
+        float env = 0.0f;         // current envelope amplitude
+        float amp = 0.0f;         // peak amplitude for this note
         bool  attacking = false;
         bool  active = false;
     };
@@ -81,6 +82,7 @@ private:
     static constexpr int kVoices = 24;
     Voice voices_[kVoices] = {};
     uint32_t next_voice_ = 0;          // round-robin voice-steal cursor (audio thread)
+    float lp_state_ = 0.0f;            // one-pole low-pass state (audio thread)
 };
 
 } // namespace viz

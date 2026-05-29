@@ -15,16 +15,23 @@ namespace {
 
 constexpr float kPi = 3.14159265358979323846f;
 
-// Major pentatonic (semitone offsets) spanning several octaves above A3. Mapping
-// element values onto this scale makes any chord/cluster consonant.
+// "Bubbly water-drop" voice (ASMR). A real bubble is a resonator whose volume-
+// mode frequency RISES as it shrinks, heard as a short upward pitch glide with a
+// soft damped tail. So each note is a pure sine that glides up to its target
+// pitch, with a low warm fundamental (the previous A3+4-octave range topped out
+// near 3 kHz, which read as harsh/treble). Major pentatonic keeps any cluster
+// consonant; a gentle master low-pass rounds off the last edge.
 constexpr int kScale[5] = {0, 2, 4, 7, 9};
-constexpr int kOctaves = 4;
+constexpr int kOctaves = 3;
 constexpr int kScaleSteps = 5 * kOctaves;
-constexpr float kBaseHz = 220.0f;   // A3
+constexpr float kBaseHz = 98.0f;            // G2 — low/warm, range tops out ~660 Hz
 
-constexpr float kAttackSeconds = 0.006f;   // soft, click-free onset
-constexpr float kDecayTau = 0.16f;         // exponential decay time constant
-constexpr float kVoiceAmp = 0.22f;
+constexpr float kAttackSeconds = 0.010f;    // soft, click-free onset
+constexpr float kDecayTau = 0.30f;          // longer, rounder tail
+constexpr float kVoiceAmp = 0.26f;
+constexpr float kGlideTau = 0.045f;         // ~45 ms upward pitch glide ("bloop")
+constexpr float kGlideStart = 0.7937f;      // start −4 semitones below target (2^(-4/12))
+constexpr float kLowpassHz = 2600.0f;       // master one-pole LP cutoff
 
 float pentatonic_hz(float value01) {
     if (value01 < 0.0f) value01 = 0.0f;
@@ -104,6 +111,7 @@ void AudioEngine::stop() {
     running_.store(false, std::memory_order_relaxed);
     // Silence any lingering voices so a later start() begins clean.
     for (Voice& v : voices_) v.active = false;
+    lp_state_ = 0.0f;
     head_.store(0, std::memory_order_relaxed);
     tail_.store(0, std::memory_order_relaxed);
 }
@@ -135,7 +143,8 @@ void AudioEngine::trigger(float freq) {
     Voice& v = voices_[next_voice_];
     next_voice_ = (next_voice_ + 1) % kVoices;   // round-robin steal
     v.phase = 0.0f;
-    v.inc = freq / static_cast<float>(sample_rate_);
+    v.inc_target = freq / static_cast<float>(sample_rate_);
+    v.inc = v.inc_target * kGlideStart;   // start a few semitones low, glide up
     v.env = 0.0f;
     v.amp = kVoiceAmp;
     v.attacking = true;
@@ -150,8 +159,11 @@ void AudioEngine::render(float* out, int32_t num_frames) {
         trigger(f);
     }
 
-    const float attack_inc = 1.0f / (kAttackSeconds * static_cast<float>(sample_rate_));
-    const float decay_mult = std::exp(-1.0f / (kDecayTau * static_cast<float>(sample_rate_)));
+    const float sr_f = static_cast<float>(sample_rate_);
+    const float attack_inc = 1.0f / (kAttackSeconds * sr_f);
+    const float decay_mult = std::exp(-1.0f / (kDecayTau * sr_f));
+    const float glide_coef = 1.0f - std::exp(-1.0f / (kGlideTau * sr_f));   // pitch glide
+    const float lp_coef = 1.0f - std::exp(-2.0f * kPi * kLowpassHz / sr_f); // warmth LP
     const float gain = volume_.load(std::memory_order_relaxed);
     const int ch = channels_;
 
@@ -159,11 +171,9 @@ void AudioEngine::render(float* out, int32_t num_frames) {
         float mix = 0.0f;
         for (Voice& v : voices_) {
             if (!v.active) continue;
-            // Warm, rounded tone: fundamental + soft harmonics.
-            const float p = 2.0f * kPi * v.phase;
-            const float s = std::sin(p) + 0.20f * std::sin(2.0f * p) + 0.07f * std::sin(3.0f * p);
-            mix += s * v.env * v.amp;
+            mix += std::sin(2.0f * kPi * v.phase) * v.env * v.amp;   // pure sine = round
 
+            v.inc += (v.inc_target - v.inc) * glide_coef;            // rising "bloop"
             v.phase += v.inc;
             if (v.phase >= 1.0f) v.phase -= 1.0f;
 
@@ -175,8 +185,9 @@ void AudioEngine::render(float* out, int32_t num_frames) {
                 if (v.env < 0.0008f) v.active = false;
             }
         }
-        // Soft saturation keeps dense passages smooth instead of clipping.
-        const float sample = std::tanh(mix * 0.8f) * gain;
+        const float sat = std::tanh(mix * 0.9f);          // soft-limit dense passages
+        lp_state_ += (sat - lp_state_) * lp_coef;          // one-pole low-pass
+        const float sample = lp_state_ * gain;
         for (int c = 0; c < ch; ++c) out[frame * ch + c] = sample;
     }
 }

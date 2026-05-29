@@ -33,7 +33,8 @@ SCALAR_METRICS = {
     # Sort engine throughput (million coroutine steps/sec) per algorithm. The
     # flat <name>_msteps_per_sec keys live under per_cluster[].sort — see
     # algoviz/sort_registry.h::run_all.
-    "sort":     ("sort",     ["bubble_msteps_per_sec", "insertion_msteps_per_sec",
+    "sort":     ("sort",     ["bubble_msteps_per_sec", "cocktail_msteps_per_sec",
+                              "insertion_msteps_per_sec", "shell_msteps_per_sec",
                               "selection_msteps_per_sec", "quick_msteps_per_sec",
                               "merge_msteps_per_sec", "heap_msteps_per_sec"]),
 }
