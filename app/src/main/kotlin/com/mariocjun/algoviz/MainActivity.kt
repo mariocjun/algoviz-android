@@ -21,6 +21,7 @@ package com.mariocjun.algoviz
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
 import android.os.Bundle
 import android.text.method.LinkMovementMethod
 import android.text.method.ScrollingMovementMethod
@@ -141,6 +142,14 @@ class MainActivity : AppCompatActivity() {
             infoRow.addView(b)
         }
         root.addView(infoRow)
+
+        // Row 2.5: Visualize — launches the ImGui sort visualizer (Phase 2).
+        val vizBtn = btn("Visualize sorts ▶", "btn_viz") {
+            startActivity(Intent(this, VizActivity::class.java))
+        }.apply {
+            layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
+        }
+        root.addView(vizBtn)
 
         // Row 3: Upload button (full-width)
         uploadBtn = btn("Upload last result", "btn_upload") { uploadLast() }.apply {

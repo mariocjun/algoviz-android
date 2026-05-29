@@ -9,6 +9,7 @@
 
 #include "algoviz/sort_registry.h"
 
+#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -109,6 +110,27 @@ TEST_CASE("step counts are deterministic for a fixed seed") {
     CHECK(a.total_steps == b.total_steps);
     CHECK(a.correct);
     CHECK(a.comparisons > 0);
+}
+
+TEST_CASE("make_sort_by_index instantiates the right algorithm and sorts") {
+    CHECK(sort_count() == 6);
+    auto names = all_sort_names();
+    for (std::size_t i = 0; i < sort_count(); ++i) {
+        CAPTURE(i);
+        CAPTURE(names[i]);
+        std::vector<int> data = {9, 1, 8, 2, 7, 3, 6, 4, 5, 0};
+        auto g = make_sort_by_index(i, data);
+        while (g.next()) { /* drain */ }
+        CHECK(std::is_sorted(data.begin(), data.end()));
+    }
+}
+
+TEST_CASE("make_sort_by_index out of range yields an empty, already-done generator") {
+    std::vector<int> data = {3, 1, 2};
+    auto g = make_sort_by_index(99, data);
+    CHECK(g.done());
+    CHECK_FALSE(g.next());
+    CHECK(data == std::vector<int>{3, 1, 2});  // untouched
 }
 
 TEST_CASE("measure_one reports sane metric relationships") {

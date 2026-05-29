@@ -5,7 +5,10 @@
          paste.rs and similar public paste services for remote analysis. -->
     <uses-permission android:name="android.permission.INTERNET" />
 
-    <uses-feature android:glEsVersion="0x00020000" android:required="false" />
+    <!-- GLES 3.0 for the ImGui visualizer (VizActivity). required=false so the
+         APK still installs on the rare GLES2-only device; VizActivity simply
+         won't render there. The benchmark/sensor/camera features need no GL. -->
+    <uses-feature android:glEsVersion="0x00030000" android:required="false" />
 
     <application
         android:allowBackup="true"
@@ -21,5 +24,13 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- ImGui (GLES3) sort visualizer. Launched from MainActivity's
+             'Visualize' button. configChanges keeps the GL surface alive
+             across rotation (no Activity recreate). -->
+        <activity
+            android:name=".VizActivity"
+            android:exported="false"
+            android:configChanges="orientation|keyboardHidden|screenSize|screenLayout" />
     </application>
 </manifest>

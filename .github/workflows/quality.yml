@@ -51,6 +51,7 @@ jobs:
             -a 6 \
             app/src/main/cpp/bench \
             app/src/main/cpp/algoviz \
+            app/src/main/cpp/viz \
             | tee reports/lizard.txt
 
       - name: Run lizard (XML for tooling)
@@ -64,6 +65,7 @@ jobs:
             --xml \
             app/src/main/cpp/bench \
             app/src/main/cpp/algoviz \
+            app/src/main/cpp/viz \
             > reports/lizard.xml || true
 
       - name: Upload reports
@@ -129,7 +131,7 @@ jobs:
           mkdir -p reports
           # Analyse bench/ + algoviz/ (the sort engine). Diagnostics are
           # informational (the C++ build's -Werror= gates are authoritative).
-          SOURCES=$(find app/src/main/cpp/bench app/src/main/cpp/algoviz -name '*.cpp' | sort)
+          SOURCES=$(find app/src/main/cpp/bench app/src/main/cpp/algoviz app/src/main/cpp/viz -name '*.cpp' | sort)
           echo "Analysing $(echo "$SOURCES" | wc -l) sources..."
           set +e
           "${{ steps.tidy.outputs.tidy }}" \

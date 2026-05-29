@@ -236,4 +236,25 @@ inline std::vector<const char*> all_sort_names() {
     return sort_names(Sorts{});
 }
 
+// Number of registered algorithms (compile-time tuple size).
+inline constexpr std::size_t sort_count() {
+    return std::tuple_size_v<Sorts>;
+}
+
+// Build the coroutine for the idx-th algorithm in the Sorts tuple. Used by the
+// visualizer's algorithm picker: the same metaprogramming registry that drives
+// the benchmark also enumerates + instantiates algorithms for the UI, so the
+// two never drift. Returns an empty (done) generator if idx is out of range.
+inline Generator<Step> make_sort_by_index(std::size_t idx, std::vector<int>& data) {
+    Generator<Step> g;   // default = empty/done
+    std::size_t k = 0;
+    bool made = false;
+    auto try_make = [&](auto&& s) {
+        using S = std::decay_t<decltype(s)>;
+        if (!made && k++ == idx) { g = S::make(data); made = true; }
+    };
+    std::apply([&](auto&&... ss) { (try_make(ss), ...); }, Sorts{});
+    return g;
+}
+
 } // namespace algoviz
