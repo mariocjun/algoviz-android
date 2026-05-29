@@ -105,7 +105,7 @@ jobs:
           # (btn_hwcaps / btn_run) — resolution- and layout-independent. Fails
           # the build if a locator can't be resolved (i.e. a button id changed
           # or vanished) or a tapped job produces no output file.
-          bash scripts/device-harness.sh ui-test REDACTED_SERIAL build/AlgoViz-release.apk
+          bash scripts/device-harness.sh ui-test "$DEVICE_SERIAL" build/AlgoViz-release.apk
 
       - name: Upload result artifacts
         if: always()
