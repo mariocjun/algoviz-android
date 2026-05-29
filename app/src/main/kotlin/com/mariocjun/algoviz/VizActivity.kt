@@ -12,6 +12,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,6 +21,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -52,16 +54,26 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.Locale
 import kotlin.math.ceil
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
 private fun barColor(v01: Float, sat: Float, value: Float): Color =
     Color.hsv((v01 * 0.82f * 360f).coerceIn(0f, 360f), sat, value)
+
+// Compact counter formatting so the stats line stays short (and stable-width)
+// no matter how large the comparison/swap/step counts grow.
+private fun fmt(n: Int): String = when {
+    n >= 1_000_000 -> String.format(Locale.US, "%.2fM", n / 1_000_000.0)
+    n >= 1_000     -> String.format(Locale.US, "%.1fk", n / 1_000.0)
+    else           -> n.toString()
+}
 
 class VizActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -108,7 +120,8 @@ private fun VizScreen() {
                 VizBridge.nativeUpdate(dt)
                 val count = VizBridge.nativeFill(buffer)
                 stats = if (count > 0 && ints.get(0) == 0) {
-                    "compares ${ints.get(5)}  swaps ${ints.get(6)}  writes ${ints.get(7)}  steps ${ints.get(8)}"
+                    "cmp ${fmt(ints.get(5))}  swap ${fmt(ints.get(6))}  " +
+                        "wr ${fmt(ints.get(7))}  steps ${fmt(ints.get(8))}"
                 } else ""
                 frame++
             }
@@ -168,7 +181,7 @@ private fun VizScreen() {
                 canvas(Modifier.fillMaxSize())
                 if (!controlsOpen) MenuPill { controlsOpen = true }
             }
-            if (controlsOpen) panel(Modifier.fillMaxWidth())
+            if (controlsOpen) panel(Modifier.fillMaxWidth().heightIn(max = 300.dp))
         }
     }
 }
@@ -283,8 +296,14 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawRace(
         }
         val name = if (k < algoNames.size) algoNames[k] else ""
         val label = if (finished) "$name #$rank" else name
-        drawText(measurer, label, topLeft = Offset(ox + pad, oy + pad),
-            style = TextStyle(color = Color(0xFFCFE0FF), fontSize = 13.sp))
+        // Shrink the label to fit its lane so long names never spill into the
+        // neighbouring cell.
+        val avail = (cw - 2 * pad).coerceAtLeast(1f)
+        val base = TextStyle(color = Color(0xFFCFE0FF), fontSize = 13.sp)
+        val measured = measurer.measure(label, base)
+        val fit = (avail / measured.size.width.toFloat()).coerceIn(0.5f, 1f)
+        val style = if (fit < 1f) base.copy(fontSize = (13f * fit).coerceAtLeast(7f).sp) else base
+        drawText(measurer, label, topLeft = Offset(ox + pad, oy + pad), style = style)
     }
 }
 
@@ -300,7 +319,12 @@ private fun ControlPanel(
     onVolume: (Float) -> Unit, onLoop: (Boolean) -> Unit, onCollapse: () -> Unit,
 ) {
     Surface(modifier, tonalElevation = 3.dp) {
-        Column(Modifier.padding(8.dp)) {
+        Column(
+            Modifier
+                .padding(8.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
             Row(verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(selected = mode == 0, onClick = { onMode(0) }, label = { Text("Single") })
@@ -322,41 +346,41 @@ private fun ControlPanel(
                         FilterChip(selected = i == algoIdx, onClick = { onAlgo(i) }, label = { Text(name) })
                     }
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Button(onClick = onPlay) { Text(if (playing) "Pause" else "Play") }
-                    Button(onClick = { onStep(-1) }) { Text("<") }
-                    Button(onClick = { onStep(1) }) { Text(">") }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Button(onClick = onPlay, modifier = Modifier.weight(1f)) { Text(if (playing) "Pause" else "Play") }
+                    Button(onClick = { onStep(-1) }, modifier = Modifier.weight(1f)) { Text("◀") }
+                    Button(onClick = { onStep(1) }, modifier = Modifier.weight(1f)) { Text("▶") }
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Button(onClick = onReset) { Text("Reset") }
-                    Button(onClick = onShuffle) { Text("Shuffle") }
-                    FilledTonalButton(onClick = onDraw) { Text(if (drawMode) "Sort" else "Draw") }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Button(onClick = onReset, modifier = Modifier.weight(1f)) { Text("Reset") }
+                    Button(onClick = onShuffle, modifier = Modifier.weight(1f)) { Text("Shuffle") }
+                    FilledTonalButton(onClick = onDraw, modifier = Modifier.weight(1f)) { Text(if (drawMode) "Sort" else "Draw") }
                 }
             } else {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Button(onClick = onPlay) { Text(if (playing) "Pause" else "Play") }
-                    Button(onClick = onReset) { Text("Reset") }
-                    Button(onClick = onShuffle) { Text("Shuffle") }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Button(onClick = onPlay, modifier = Modifier.weight(1f)) { Text(if (playing) "Pause" else "Play") }
+                    Button(onClick = onReset, modifier = Modifier.weight(1f)) { Text("Reset") }
+                    Button(onClick = onShuffle, modifier = Modifier.weight(1f)) { Text("Shuffle") }
                 }
             }
             StepperRow("Speed", speed, 1, 512, 1, onSpeed)
             StepperRow("Size", size, 16, 400, 8, onSize)
-            Text(stats, fontSize = 12.sp)
+            Text(stats, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
     }
 }
 
 @Composable
 private fun StepperRow(label: String, value: Int, lo: Int, hi: Int, step: Int, onChange: (Int) -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Button(onClick = { onChange((value - step).coerceAtLeast(lo)) }) { Text("-") }
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text("$label $value", fontSize = 12.sp, maxLines = 1, modifier = Modifier.width(86.dp))
+        Button(onClick = { onChange((value - step).coerceAtLeast(lo)) }) { Text("−") }
         Slider(
             value = value.toFloat(),
             onValueChange = { onChange(it.roundToInt().coerceIn(lo, hi)) },
             valueRange = lo.toFloat()..hi.toFloat(),
-            modifier = Modifier.width(180.dp),
+            modifier = Modifier.weight(1f),
         )
         Button(onClick = { onChange((value + step).coerceAtMost(hi)) }) { Text("+") }
-        Text("$label $value", fontSize = 12.sp)
     }
 }
