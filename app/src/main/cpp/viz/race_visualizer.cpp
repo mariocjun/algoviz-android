@@ -2,6 +2,7 @@
 
 #include "audio_engine.h"
 #include "palette.h"
+#include "widgets.h"
 
 #include "../algoviz/sort_registry.h"
 
@@ -118,7 +119,22 @@ void RaceVisualizer::grid_dims(int n, float aspect, int& cols, int& rows) {
     rows = (n + best_cols - 1) / best_cols;
 }
 
-void RaceVisualizer::draw_body() {
+void RaceVisualizer::update() {
+    if (playing_) advance();
+    if (finished_count_ >= static_cast<int>(lanes_.size()) && auto_loop_) {
+        finished_timer_ += ImGui::GetIO().DeltaTime;
+        if (finished_timer_ >= kAutoLoopDelay) {
+            seed_ = seed_ * 6364136223846793005ULL + 1442695040888963407ULL;
+            reset();
+        }
+    }
+}
+
+float RaceVisualizer::controls_height() const {
+    return 4.4f * ImGui::GetFrameHeightWithSpacing();   // transport + speed + size + podium(wrap)
+}
+
+void RaceVisualizer::draw_controls() {
     if (ImGui::Button(playing_ ? "Pause" : "Play")) playing_ = !playing_;
     ImGui::SameLine();
     if (ImGui::Button("Reset")) reset();
@@ -127,10 +143,8 @@ void RaceVisualizer::draw_body() {
         seed_ = seed_ * 6364136223846793005ULL + 1442695040888963407ULL;
         reset();
     }
-    ImGui::SetNextItemWidth(260.0f);
-    ImGui::SliderInt("Speed", &speed_, 1, 256, "%d steps/frame");
-    ImGui::SetNextItemWidth(260.0f);
-    if (ImGui::SliderInt("Size", &size_, 16, 256, "%d bars")) reset();
+    param_int("Speed", &speed_, 1, 256, 1, 220.0f);
+    if (param_int("Size", &size_, 16, 256, 8, 220.0f)) reset();
 
     std::string board = "Racing...";
     if (finished_count_ > 0) {
@@ -145,23 +159,31 @@ void RaceVisualizer::draw_body() {
         }
     }
     ImGui::TextWrapped("%s", board.c_str());
-
-    if (playing_) advance();
-
-    if (finished_count_ >= static_cast<int>(lanes_.size()) && auto_loop_) {
-        finished_timer_ += ImGui::GetIO().DeltaTime;
-        if (finished_timer_ >= kAutoLoopDelay) {
-            seed_ = seed_ * 6364136223846793005ULL + 1442695040888963407ULL;
-            reset();
-        }
-    }
-
-    draw_grid();
 }
 
-void RaceVisualizer::draw_grid() {
+void RaceVisualizer::draw_canvas() {
     const ImVec2 origin = ImGui::GetCursorScreenPos();
     const ImVec2 avail = ImGui::GetContentRegionAvail();
+    if (avail.x < 24.0f || avail.y < 24.0f) return;
+
+    ImGui::InvisibleButton("##racecanvas", avail);
+    const bool hovered = ImGui::IsItemHovered();
+    const bool active = ImGui::IsItemActive();
+    ImGuiIO& io = ImGui::GetIO();
+    if (hovered && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+        playing_ = !playing_;
+    }
+    if (active && std::fabs(io.MouseDelta.x) > 1.0f &&
+        std::fabs(io.MouseDelta.x) > std::fabs(io.MouseDelta.y)) {
+        speed_ += static_cast<int>(io.MouseDelta.x * 0.3f);
+        if (speed_ < 1) speed_ = 1;
+        if (speed_ > 256) speed_ = 256;
+    }
+
+    draw_grid(origin, avail);
+}
+
+void RaceVisualizer::draw_grid(const ImVec2& origin, const ImVec2& avail) {
     const int n = static_cast<int>(lanes_.size());
     if (n == 0 || avail.x < 24.0f || avail.y < 24.0f) return;
 
@@ -221,7 +243,6 @@ void RaceVisualizer::draw_grid() {
             dl->AddRectFilled(ImVec2(x0, by1 - bh), ImVec2(x1, by1), c);
         }
     }
-    ImGui::Dummy(avail);
 }
 
 } // namespace viz

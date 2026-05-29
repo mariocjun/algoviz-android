@@ -13,6 +13,8 @@
 #include "../algoviz/generator.h"
 #include "../algoviz/step.h"
 
+#include "imgui.h"
+
 #include <cstdint>
 #include <memory>
 #include <vector>
@@ -28,7 +30,10 @@ public:
     void set_audio(AudioEngine* a) { audio_ = a; }
     void set_auto_loop(bool b) { auto_loop_ = b; }
 
-    void draw_body();   // controls + grid; assumes an active ImGui window
+    void update();          // advance all lanes once per frame (+ auto-loop)
+    void draw_controls();   // panel widgets
+    void draw_canvas();     // grid + gestures
+    float controls_height() const;
 
 private:
     struct Lane {
@@ -45,7 +50,7 @@ private:
 
     void reset();
     void advance();
-    void draw_grid();
+    void draw_grid(const ImVec2& origin, const ImVec2& avail);
     static void grid_dims(int n, float aspect, int& cols, int& rows);
 
     std::vector<Lane> lanes_;

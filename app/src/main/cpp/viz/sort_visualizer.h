@@ -1,20 +1,22 @@
-// SortVisualizer — single-algorithm view (Phase 2, extended in Phase 3).
+// SortVisualizer — single-algorithm view.
 //
-// Drives the EXACT Phase 1 coroutines: the algorithm picker enumerates the
-// SortAlgo registry and instantiates the chosen sort via make_sort_by_index,
-// then pulls Step values to animate. Bars are colored by value (rainbow), the
-// most-recent access is voiced through the AudioEngine (one note/frame so it
-// stays musical at any speed), and on completion it auto-loops with a fresh
-// shuffle — an endless, satisfying ambient.
+// Split for the dockable/collapsible layout VizApp owns:
+//   update()        — advance playback once/frame (+ audio, auto-loop)
+//   draw_controls() — the panel widgets (combo, transport ◀▶, steppers, draw)
+//   draw_canvas()   — the bar field as an InvisibleButton + gestures
 //
-// draw_body() renders into the CALLER's ImGui window (VizApp owns the window),
-// so this no longer calls Begin/End.
+// Back-stepping (◀): coroutines are forward-only and the sort mutates the array
+// itself before yielding, so the value a Set overwrote is already gone by the
+// time we see the Step. We keep a lockstep `mirror_` copy advanced one step at a
+// time, so just before applying a Set we can read the previous value from
+// mirror_ and record it for undo. undo_/redo_ give a bounded scrub.
 #pragma once
 
 #include "../algoviz/generator.h"
 #include "../algoviz/step.h"
 
 #include <cstdint>
+#include <deque>
 #include <vector>
 
 namespace viz {
@@ -28,34 +30,50 @@ public:
     void set_audio(AudioEngine* a) { audio_ = a; }
     void set_auto_loop(bool b) { auto_loop_ = b; }
 
-    void draw_body();   // controls + rainbow bars; assumes an active ImGui window
+    void update();          // advance playback (once per frame)
+    void draw_controls();   // panel widgets; assumes an active ImGui window/child
+    void draw_canvas();     // bar field + gestures; assumes an active window/child
+    float controls_height() const;  // pixels the control panel needs (for docking)
 
 private:
-    void reset();
-    void advance(int steps);
-    void draw_bars();
+    struct HistStep {
+        algoviz::Step step;
+        int prev;   // value overwritten by a Set (for undo); unused otherwise
+    };
+
+    void reset();               // iota + shuffle, then rebuild
+    void rebuild_generator();   // generator over current data_, clear undo/redo
+    bool step_forward();        // apply one step; false at completion
+    void step_back();           // undo one step
+    void account(const algoviz::Step& s, int delta);  // counters + highlight (+1 fwd / -1 back)
+    void play_current_note();
     int at(int i) const { return data_[static_cast<std::size_t>(i)]; }
 
     std::vector<int> data_;
+    std::vector<int> mirror_;   // lockstep copy: recovers Set-overwritten values
     algoviz::Generator<algoviz::Step> gen_;
 
-    int algo_idx_ = 3;        // default selection (quick)
+    int algo_idx_ = 3;          // default: quick
     int size_ = 96;
     int speed_ = 8;
     bool playing_ = true;
     bool finished_ = false;
     bool auto_loop_ = true;
+    bool draw_mode_ = false;    // paint-your-own-array
     float finished_timer_ = 0.0f;
     std::uint64_t seed_ = 0xC0FFEEULL;
 
     int hi_a_ = -1;
     int hi_b_ = -1;
-    bool stepped_this_frame_ = false;
 
     long long compares_ = 0;
     long long swaps_ = 0;
     long long writes_ = 0;
     long long steps_ = 0;
+
+    static constexpr std::size_t kMaxHistory = 20000;  // bounded back-scrub
+    std::deque<HistStep> undo_;
+    std::vector<HistStep> redo_;
 
     AudioEngine* audio_ = nullptr;
 };
