@@ -148,64 +148,24 @@ if(ANDROID_ABI STREQUAL "arm64-v8a")
 endif()
 
 # ----------------------------------------------------------------------------
-# Dear ImGui (Phase 2 visual layer). Fetched at configure time (pinned tag),
-# same pattern as tests/ doctest — no vendored blob in the repo. ImGui ships no
-# CMakeLists, so FetchContent_MakeAvailable just populates imgui_SOURCE_DIR and
-# we compile its TUs into a dedicated STATIC lib. Two deliberate choices:
-#   - SYSTEM include dirs + per-target `-w`: vendored third-party code can't be
-#     held to this project's -Werror= warning set, and marking the headers
-#     SYSTEM keeps imgui.h from tripping warnings inside our own strict TUs.
-#   - We use the GLES3 renderer backend (imgui_impl_opengl3 with
-#     IMGUI_IMPL_OPENGL_ES3) but NOT imgui_impl_android — that backend depends
-#     on android_native_app_glue's input queue, which this template removed.
-#     The viz layer feeds input to ImGui itself via JNI (viz/viz_jni.cpp).
-# Only the APK's .so links ImGui; the headless cppbench ELF has no UI.
-# ----------------------------------------------------------------------------
-include(FetchContent)
-FetchContent_Declare(imgui
-    GIT_REPOSITORY https://github.com/ocornut/imgui.git
-    GIT_TAG v1.91.5
-    GIT_SHALLOW TRUE)
-FetchContent_MakeAvailable(imgui)
-
-add_library(imgui STATIC
-    ${imgui_SOURCE_DIR}/imgui.cpp
-    ${imgui_SOURCE_DIR}/imgui_draw.cpp
-    ${imgui_SOURCE_DIR}/imgui_tables.cpp
-    ${imgui_SOURCE_DIR}/imgui_widgets.cpp
-    ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp)
-target_include_directories(imgui SYSTEM PUBLIC
-    ${imgui_SOURCE_DIR}
-    ${imgui_SOURCE_DIR}/backends)
-target_compile_definitions(imgui PUBLIC IMGUI_IMPL_OPENGL_ES3)
-target_compile_options(imgui PRIVATE -w)
-target_link_libraries(imgui PUBLIC GLESv3 EGL android log)
-
-# ----------------------------------------------------------------------------
 # libalgoviz.so — loaded by MainActivity / VizActivity via System.loadLibrary.
-# The JNI bridge in jni.cpp (Java_com_mariocjun_algoviz_MainActivity_*)
-# routes UI button taps into bench::registry::dispatch and the sensors /
-# camera enumerators. viz/viz_jni.cpp (Java_..._VizActivity_*) drives the ImGui
-# visualizer. The legacy NativeActivity entry point (main.cpp +
-# android_native_app_glue + the '-u ANativeActivity_onCreate' link flag)
-# was removed when the Manifest switched to MainActivity — those code
-# paths were unreachable at runtime and just bloated the .so.
+# jni.cpp (Java_..._MainActivity_*) routes the profiler UI into
+# bench::registry::dispatch + sensor/camera enumerators. The sort visualizer is
+# native Jetpack Compose (app/src/main/kotlin/.../VizActivity.kt); viz/ here is
+# the headless C++ engine + AAudio synth, exposed to Compose through JNI
+# (viz/native_bridge.cpp). No ImGui / GLES dependency.
 # ----------------------------------------------------------------------------
 set(VIZ_SOURCES
     viz/audio_engine.cpp
     viz/single_engine.cpp
     viz/race_engine.cpp
     viz/viz_engine.cpp
-    viz/native_bridge.cpp
-    viz/sort_visualizer.cpp
-    viz/race_visualizer.cpp
-    viz/viz_app.cpp
-    viz/viz_jni.cpp)
+    viz/native_bridge.cpp)
 
 add_library(algoviz SHARED jni.cpp ${BENCH_SOURCES} ${VIZ_SOURCES})
 # aaudio: the NDK's built-in low-latency audio API used by the ASMR synth
 # (viz/audio_engine.cpp). No third-party audio dependency.
-target_link_libraries(algoviz ${BENCH_LIBS} imgui aaudio)
+target_link_libraries(algoviz ${BENCH_LIBS} aaudio)
 harden_target(algoviz)
 # jni.cpp uses [[maybe_unused]] params via JNIEnv conventions; -Wpedantic
 # can flag them in some clang versions. The harden_target options already
