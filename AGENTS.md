@@ -9,7 +9,7 @@ is the 60-second orientation; CLAUDE.md is the detail.
 ## The 7 things to know before you touch anything
 
 1. **App shape:** Kotlin `MainActivity` → JNI bridge (`app/src/main/cpp/jni.cpp`)
-   → C++ profiler in `libcppandroidtest.so`. No NativeActivity.
+   → C++ profiler in `libalgoviz.so`. No NativeActivity.
 2. **Never rename the package by hand.** JNI symbols
    (`Java_<pkg>_MainActivity_*`), the Kotlin dir path, and `applicationId` are
    coupled. Use `scripts/init-template.sh`.

@@ -47,7 +47,7 @@ jobs:
           mkdir -p artifacts
           # Tagged APK — installable. minSdk=29 (Android 10+).
           cp app/build/outputs/apk/release/app-release.apk \
-             "artifacts/CppAndroidTest-${GITHUB_REF_NAME}.apk"
+             "artifacts/AlgoViz-${GITHUB_REF_NAME}.apk"
           # Standalone bench ELF — push to /data/local/tmp/ on any rooted
           # OR unrooted Android device with USB debugging, no APK install.
           # Stripped to keep the asset small (~200 KB instead of ~2 MB).
@@ -60,7 +60,7 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: CppAndroidTest-${{ github.ref_name }}
+          name: AlgoViz-${{ github.ref_name }}
           path: artifacts/*
 
       - name: Create GitHub Release
@@ -74,7 +74,7 @@ jobs:
           body: |
             ## Assets
 
-            - **`CppAndroidTest-${{ github.ref_name }}.apk`** — installable NativeActivity demo.
+            - **`AlgoViz-${{ github.ref_name }}.apk`** — installable NativeActivity demo.
               Min SDK: 29 (Android 10+). Signed with the Android debug keystore — installs on
               any device with "Install from unknown sources" enabled. Not Play-Store eligible.
 

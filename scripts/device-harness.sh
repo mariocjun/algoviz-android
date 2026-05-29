@@ -4,7 +4,7 @@
 # Generalises the device-session patterns from the redacted-project project's
 # tools/csi-patch/flash_f2.sh (device-identity gate, asroot exec, recovery-slot
 # root activation, verify-every-step) into a reusable rig for installing and
-# benchmarking the cppandroidtest app on PHYSICAL devices. The official tester
+# benchmarking the algoviz app on PHYSICAL devices. The official tester
 # is the rooted SM-N975F (Exynos 9825); root unlocks PMU counters
 # (perf_event_open via CAP_PERFMON) and cpufreq governor pinning, neither of
 # which is available on the unrooted S24 Ultra.
@@ -213,7 +213,7 @@ bench_stats() {
 resolve_apk() {
     local a="${1:-}"
     if [ -n "$a" ] && [ -f "$a" ]; then echo "$a"; return; fi
-    local dl="$REPO/build/CppAndroidTest-release.apk"
+    local dl="$REPO/build/AlgoViz-release.apk"
     if [ ! -f "$dl" ]; then
         mkdir -p "$(dirname "$dl")"
         local slug; slug=$(repo_slug)
@@ -226,7 +226,7 @@ resolve_apk() {
 
 ui_test() {
     local apk; apk=$(resolve_apk "${1:-}")
-    local PKG=com.example.cppandroidtest
+    local PKG=com.mariocjun.algoviz
     local FILES=/storage/emulated/0/Android/data/$PKG/files
     local PY="${PYTHON:-python}"
     echo "ui-test: install $apk"

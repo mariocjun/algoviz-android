@@ -1,4 +1,4 @@
-# cppandroidtest — C++/NDK Android template + on-device profiler
+# algoviz — C++/NDK Android template + on-device profiler
 
 A **forkable starting point** for a serious C++ Android project, plus a built-in
 **hardware profiler**. It's the plumbing that normally costs days — NDK + CMake +

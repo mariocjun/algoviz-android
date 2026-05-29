@@ -4,12 +4,12 @@ plugins {
 }
 
 android {
-    namespace = "com.example.cppandroidtest"
+    namespace = "com.mariocjun.algoviz"
     compileSdk = 34
     ndkVersion = "26.1.10909125"
 
     defaultConfig {
-        applicationId = "com.example.cppandroidtest"
+        applicationId = "com.mariocjun.algoviz"
         // minSdk 29 (Android 10) because:
         //   - ASensor_getHandle was added in API 29 (NDK marks it
         //     __INTRODUCED_IN(29); we use it in bench/sensors).

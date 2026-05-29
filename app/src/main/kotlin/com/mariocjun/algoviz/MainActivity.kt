@@ -1,4 +1,4 @@
-// MainActivity — user-facing entry. Loads libcppandroidtest.so, drives the
+// MainActivity — user-facing entry. Loads libalgoviz.so, drives the
 // JNI bridge that returns benchmark / sensor / camera / hwcap JSON, and
 // handles crash-dump propagation.
 //
@@ -16,7 +16,7 @@
 //      benchmark).
 //   3. Appended to a log file in filesDir/upload-log.txt.
 
-package com.example.cppandroidtest
+package com.mariocjun.algoviz
 
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -53,7 +53,7 @@ import java.util.Locale
 class MainActivity : AppCompatActivity() {
 
     companion object {
-        init { System.loadLibrary("cppandroidtest") }
+        init { System.loadLibrary("algoviz") }
         private const val PADDING_DP = 12
         private const val PASTE_ENDPOINT = "https://paste.rs/"
         private const val MAX_URL_HISTORY = 8
@@ -308,7 +308,7 @@ class MainActivity : AppCompatActivity() {
             connectTimeout = 15_000
             readTimeout = 15_000
             setRequestProperty("Content-Type", "text/plain; charset=utf-8")
-            setRequestProperty("User-Agent", "cppandroidtest/0.3.3")
+            setRequestProperty("User-Agent", "algoviz/0.3.3")
         }
         try {
             conn.outputStream.use { os: OutputStream -> os.write(body.toByteArray(Charsets.UTF_8)) }

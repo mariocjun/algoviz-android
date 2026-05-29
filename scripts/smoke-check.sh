@@ -10,12 +10,12 @@
 set -euo pipefail
 
 APK_PATH="${APK_PATH:-app/build/outputs/apk/debug/app-debug.apk}"
-PACKAGE="${PACKAGE:-com.example.cppandroidtest}"
-ACTIVITY="${ACTIVITY:-com.example.cppandroidtest.MainActivity}"
-LOG_TAG="${LOG_TAG:-CppAndroidTest}"
+PACKAGE="${PACKAGE:-com.mariocjun.algoviz}"
+ACTIVITY="${ACTIVITY:-com.mariocjun.algoviz.MainActivity}"
+LOG_TAG="${LOG_TAG:-AlgoViz}"
 # JNI_OnLoad fires from MainActivity's static initialiser
-# (System.loadLibrary("cppandroidtest")) as soon as the class is loaded.
-EXPECT_LOG="${EXPECT_LOG:-JNI_OnLoad: libcppandroidtest.so ready}"
+# (System.loadLibrary("algoviz")) as soon as the class is loaded.
+EXPECT_LOG="${EXPECT_LOG:-JNI_OnLoad: libalgoviz.so ready}"
 WAIT_SECONDS="${WAIT_SECONDS:-8}"
 
 echo "==> Uninstalling any previous install (debug keystore differs between CI runners)"

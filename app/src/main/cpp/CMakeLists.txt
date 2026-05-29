@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22.1)
-project(cppandroidtest LANGUAGES CXX C)
+project(algoviz LANGUAGES CXX C)
 
 # C++23 — Clang 17 (NDK r26b) ships partial-but-substantial C++23 support.
 # What we get reliably: 'if consteval', 'static operator()', deducing this on
@@ -147,17 +147,17 @@ if(ANDROID_ABI STREQUAL "arm64-v8a")
 endif()
 
 # ----------------------------------------------------------------------------
-# libcppandroidtest.so — loaded by MainActivity via System.loadLibrary.
-# The JNI bridge in jni.cpp (Java_com_example_cppandroidtest_MainActivity_*)
+# libalgoviz.so — loaded by MainActivity via System.loadLibrary.
+# The JNI bridge in jni.cpp (Java_com_mariocjun_algoviz_MainActivity_*)
 # routes UI button taps into bench::registry::dispatch and the sensors /
 # camera enumerators. The legacy NativeActivity entry point (main.cpp +
 # android_native_app_glue + the '-u ANativeActivity_onCreate' link flag)
 # was removed when the Manifest switched to MainActivity — those code
 # paths were unreachable at runtime and just bloated the .so.
 # ----------------------------------------------------------------------------
-add_library(cppandroidtest SHARED jni.cpp ${BENCH_SOURCES})
-target_link_libraries(cppandroidtest ${BENCH_LIBS})
-harden_target(cppandroidtest)
+add_library(algoviz SHARED jni.cpp ${BENCH_SOURCES})
+target_link_libraries(algoviz ${BENCH_LIBS})
+harden_target(algoviz)
 # jni.cpp uses [[maybe_unused]] params via JNIEnv conventions; -Wpedantic
 # can flag them in some clang versions. The harden_target options already
 # include -Wno-unused-parameter equivalence via -Werror gating, but JNI

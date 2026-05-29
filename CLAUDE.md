@@ -12,7 +12,7 @@ once; it's the map. Cross-tool agents: see `AGENTS.md`. Invokable capabilities:
 
 ## What this is
 
-A Kotlin **`MainActivity`** (AppCompat) that loads `libcppandroidtest.so` and
+A Kotlin **`MainActivity`** (AppCompat) that loads `libalgoviz.so` and
 calls into C++ through a thin **JNI bridge** (`app/src/main/cpp/jni.cpp`). The
 C++ side is a profiler/benchmark harness under `app/src/main/cpp/bench/`. There
 is no NativeActivity and no `android_native_app_glue` — an earlier revision used
@@ -20,7 +20,7 @@ those; they were removed when the UI moved to MainActivity. Don't reintroduce
 the `-u ANativeActivity_onCreate` linker flag; it's gone for a reason.
 
 **The load-bearing invariant:** the JNI function names in `jni.cpp`
-(`Java_com_example_cppandroidtest_MainActivity_*`) must match the Kotlin
+(`Java_com_mariocjun_algoviz_MainActivity_*`) must match the Kotlin
 package + class exactly, or the app crashes at the first native call. The
 package appears in ~5 coupled places (Kotlin dir path, package decl, JNI
 symbols, `applicationId`, `namespace`). **Never rename the package by hand** —

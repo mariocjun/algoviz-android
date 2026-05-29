@@ -20,5 +20,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "CppAndroidTest"
+rootProject.name = "AlgoViz"
 include(":app")

@@ -38,7 +38,7 @@
 #include <sys/ucontext.h>
 #include <unistd.h>
 
-#define LOG_TAG "CppAndroidTest"
+#define LOG_TAG "AlgoViz"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
@@ -112,9 +112,9 @@ std::string make_error_json(const char* where, const char* what) {
 // SA_SIGINFO + 3-arg handler gives us siginfo_t (faulting address) and
 // ucontext_t (full register state at the moment of the trap). On arm64 the
 // program counter at the time of SIGILL is at ucontext->uc_mcontext.pc;
-// dumping that PLUS the libcppandroidtest.so base from /proc/self/maps lets
+// dumping that PLUS the libalgoviz.so base from /proc/self/maps lets
 // us turn the absolute PC into an offset we can resolve back to a symbol
-// offline via `llvm-addr2line -e libcppandroidtest.so <offset>`.
+// offline via `llvm-addr2line -e libalgoviz.so <offset>`.
 //
 // Async-signal-safe constraints: no malloc, no iostreams, no locale, no
 // fprintf. We use open/write/close (POSIX async-signal-safe per POSIX.1) and
@@ -132,7 +132,7 @@ const char* sig_name(int sig) {
     }
 }
 
-// Read libcppandroidtest.so's load base from /proc/self/maps. Best-effort —
+// Read libalgoviz.so's load base from /proc/self/maps. Best-effort —
 // returns 0 on any failure. async-signal-safe (open/read/close only).
 uintptr_t find_so_base() {
     int fd = ::open("/proc/self/maps", O_RDONLY);
@@ -144,7 +144,7 @@ uintptr_t find_so_base() {
     // typically <= 200 bytes and the .so usually appears in the first ~16 KB.
     while ((n = ::read(fd, buf, sizeof(buf) - 1)) > 0) {
         buf[n] = '\0';
-        const char* needle = "libcppandroidtest.so";
+        const char* needle = "libalgoviz.so";
         const char* p = std::strstr(buf, needle);
         if (p) {
             // Walk back to the start of the line, then parse the hex address.
@@ -245,7 +245,7 @@ extern "C" {
 
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* /*vm*/, void* /*reserved*/) {
     install_signal_handlers();
-    LOGI("JNI_OnLoad: libcppandroidtest.so ready for benchmarks");
+    LOGI("JNI_OnLoad: libalgoviz.so ready for benchmarks");
     return JNI_VERSION_1_6;
 }
 
@@ -253,7 +253,7 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* /*vm*/, void* /*reserved*/) {
 // app startup with getFilesDir() (the app's internal-data dir, always
 // writable, always exists).
 JNIEXPORT void JNICALL
-Java_com_example_cppandroidtest_MainActivity_nativeSetCrashDir(
+Java_com_mariocjun_algoviz_MainActivity_nativeSetCrashDir(
     JNIEnv* env, jobject /*this*/, jstring jInternalDir) {
     const std::string d = jstring_to_std(env, jInternalDir);
     if (d.empty()) return;
@@ -264,7 +264,7 @@ Java_com_example_cppandroidtest_MainActivity_nativeSetCrashDir(
 }
 
 JNIEXPORT jstring JNICALL
-Java_com_example_cppandroidtest_MainActivity_nativeRunBenchmarks(
+Java_com_mariocjun_algoviz_MainActivity_nativeRunBenchmarks(
     JNIEnv* env, jobject /*this*/, jstring jExternalDir, jstring jFilter) {
     const std::string out_dir = jstring_to_std(env, jExternalDir);
     const std::string filter  = jstring_to_std(env, jFilter);
@@ -302,7 +302,7 @@ Java_com_example_cppandroidtest_MainActivity_nativeRunBenchmarks(
 }
 
 JNIEXPORT jstring JNICALL
-Java_com_example_cppandroidtest_MainActivity_nativeEnumerateSensors(
+Java_com_mariocjun_algoviz_MainActivity_nativeEnumerateSensors(
     JNIEnv* env, jobject /*this*/) {
     LOGI("nativeEnumerateSensors: start");
     try {
@@ -320,7 +320,7 @@ Java_com_example_cppandroidtest_MainActivity_nativeEnumerateSensors(
 }
 
 JNIEXPORT jstring JNICALL
-Java_com_example_cppandroidtest_MainActivity_nativeHwcaps(
+Java_com_mariocjun_algoviz_MainActivity_nativeHwcaps(
     JNIEnv* env, jobject /*this*/) {
     // Authoritative kernel view of which extensions userspace can use.
     // Surfaced to the UI so the user can see *before* running a bench
@@ -342,7 +342,7 @@ Java_com_example_cppandroidtest_MainActivity_nativeHwcaps(
 }
 
 JNIEXPORT jstring JNICALL
-Java_com_example_cppandroidtest_MainActivity_nativeEnumerateCameras(
+Java_com_mariocjun_algoviz_MainActivity_nativeEnumerateCameras(
     JNIEnv* env, jobject /*this*/) {
     LOGI("nativeEnumerateCameras: start");
     try {
