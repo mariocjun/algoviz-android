@@ -71,14 +71,11 @@ set(HEAVY_OPT
     -fstrict-aliasing
     -fdata-sections
     -ffunction-sections
-    # Intentionally NOT setting -fvisibility=hidden: the NativeActivity
-    # entry point (ANativeActivity_onCreate, in native_app_glue) and
-    # android_main are both required to be exported from the .so. The
-    # NDK's native_app_glue marks ANativeActivity_onCreate visibility-
-    # default, but hiding everything else would require explicit
-    # __attribute__((visibility("default"))) on android_main too — for
-    # now we keep symbols default-visible and rely on --gc-sections to
-    # strip the unused ones at link time.
+    # Intentionally NOT setting -fvisibility=hidden: the JNI entry points
+    # (Java_com_mariocjun_algoviz_* from jni.cpp + the VizBridge bridge in
+    # viz/native_bridge.cpp) must stay exported from the .so or the runtime
+    # can't bind them at the first native call. Keep symbols default-visible
+    # and rely on --gc-sections to strip the unused ones at link time.
     -flto=thin                   # link-time optimisation
 )
 

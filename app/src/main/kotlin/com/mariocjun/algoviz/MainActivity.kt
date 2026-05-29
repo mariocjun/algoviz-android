@@ -143,7 +143,7 @@ class MainActivity : AppCompatActivity() {
         }
         root.addView(infoRow)
 
-        // Row 2.5: Visualize — launches the ImGui sort visualizer (Phase 2).
+        // Row 2.5: Visualize — launches the Compose sort visualizer (VizActivity).
         val vizBtn = btn("Visualize sorts ▶", "btn_viz") {
             startActivity(Intent(this, VizActivity::class.java))
         }.apply {
