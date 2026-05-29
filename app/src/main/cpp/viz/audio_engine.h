@@ -19,7 +19,13 @@
 #include <atomic>
 #include <cstdint>
 
-struct AAudioStream;  // opaque; full type stays in the .cpp
+// <aaudio/AAudio.h> declares AAudioStream as `typedef struct AAudioStreamStruct
+// AAudioStream;`, so forward-declaring it as `struct AAudioStream;` is a
+// conflicting type (typedef redefinition error). Mirror the SDK's own typedef
+// instead — an identical typedef is a legal redeclaration when AAudio.h is later
+// pulled into the .cpp.
+struct AAudioStreamStruct;
+typedef struct AAudioStreamStruct AAudioStream;
 
 namespace viz {
 
