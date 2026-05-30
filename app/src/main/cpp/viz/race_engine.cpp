@@ -25,8 +25,12 @@ void RaceEngine::reset() {
     lanes_.clear();
     std::vector<int> base(static_cast<std::size_t>(size_));
     std::iota(base.begin(), base.end(), 1);
-    std::mt19937_64 rng(seed_);
-    std::shuffle(base.begin(), base.end(), rng);
+    if (input_mode_ == 1) {
+        std::reverse(base.begin(), base.end());        // worst case: reverse-sorted input
+    } else {
+        std::mt19937_64 rng(seed_);
+        std::shuffle(base.begin(), base.end(), rng);   // fair: the same random shuffle for all
+    }
 
     const auto names = algoviz::all_sort_names();
     const std::size_t cnt = algoviz::sort_count();
@@ -40,6 +44,7 @@ void RaceEngine::reset() {
     }
     finished_count_ = 0;
     finished_timer_ = 0.0f;
+    slow_accum_ = 0.0f;
 }
 
 void RaceEngine::shuffle() {
@@ -54,10 +59,20 @@ void RaceEngine::set_size(int n) {
 
 void RaceEngine::set_speed(int s) { speed_ = clamp_int(s, 1, 256); }
 
-void RaceEngine::advance() {
+void RaceEngine::set_slow_period_ms(int ms) {
+    slow_period_ = ms <= 0 ? 0.0f : static_cast<float>(ms) / 1000.0f;
+    slow_accum_ = 0.0f;
+}
+
+void RaceEngine::set_input_mode(int mode) {
+    input_mode_ = mode == 1 ? 1 : 0;
+    reset();
+}
+
+void RaceEngine::advance(int steps) {
     for (Lane& L : lanes_) {
         if (L.finished) continue;
-        for (int s = 0; s < speed_; ++s) {
+        for (int s = 0; s < steps; ++s) {
             if (!L.gen.next()) {
                 L.finished = true;
                 L.rank = ++finished_count_;
@@ -97,7 +112,14 @@ float RaceEngine::consume_note() {
 }
 
 void RaceEngine::update(float dt_seconds) {
-    if (playing_) advance();
+    if (playing_) {
+        if (slow_period_ > 0.0f) {              // slow mode: one step per period
+            slow_accum_ += dt_seconds;
+            while (slow_accum_ >= slow_period_) { slow_accum_ -= slow_period_; advance(1); }
+        } else {
+            advance(speed_);
+        }
+    }
     if (finished_count_ >= static_cast<int>(lanes_.size()) && auto_loop_) {
         finished_timer_ += dt_seconds;
         if (finished_timer_ >= kAutoLoopDelay) shuffle();

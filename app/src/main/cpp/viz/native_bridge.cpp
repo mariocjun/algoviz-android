@@ -106,6 +106,10 @@ Java_com_mariocjun_algoviz_VizBridge_nativeSetSlow(JNIEnv* /*env*/, jobject /*th
     engine()->set_slow(ms);
 }
 JNIEXPORT void JNICALL
+Java_com_mariocjun_algoviz_VizBridge_nativeSetRaceMode(JNIEnv* /*env*/, jobject /*thiz*/, jint m) {
+    engine()->set_race_mode(m);
+}
+JNIEXPORT void JNICALL
 Java_com_mariocjun_algoviz_VizBridge_nativeUpdate(JNIEnv* /*env*/, jobject /*thiz*/, jfloat dt) {
     engine()->update(dt);
 }

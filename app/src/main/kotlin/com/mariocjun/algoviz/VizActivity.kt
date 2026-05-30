@@ -148,6 +148,7 @@ private fun VizScreen() {
     var reStrike by remember { mutableStateOf(false) }
     var rewinding by remember { mutableStateOf(false) }   // VHS rewind (long-press + drag left)
     var slowIdx by remember { mutableIntStateOf(0) }      // slow-motion rate (0 = off; <=32 bars only)
+    var raceMode by remember { mutableIntStateOf(0) }     // 0 = fair race, 1 = worst case
 
     // Push initial UI state into the engine so the two never disagree (the C++
     // engine has its own defaults; the UI is the source of truth on launch).
@@ -158,6 +159,7 @@ private fun VizScreen() {
         VizBridge.nativeSetSize(size)
         VizBridge.nativeSetScale(scaleIdx)
         VizBridge.nativeSetSlow(SLOW_MS[slowIdx])
+        VizBridge.nativeSetRaceMode(raceMode)
         VizBridge.nativeSetSound(sound)
         VizBridge.nativeSetVolume(volume)
         VizBridge.nativeSetAutoLoop(loop)
@@ -231,7 +233,7 @@ private fun VizScreen() {
             mode = mode, playing = playing, algoIdx = algoIdx, algoNames = algoNames,
             speed = speed, size = size, sound = sound, volume = volume, loop = loop,
             drawMode = drawMode, stats = stats,
-            scaleIdx = scaleIdx, scaleNames = scaleNames, finishFx = finishFx, slowIdx = slowIdx,
+            scaleIdx = scaleIdx, scaleNames = scaleNames, finishFx = finishFx, slowIdx = slowIdx, raceMode = raceMode,
             onMode = { m -> mode = m; drawMode = false; VizBridge.nativeSetDrawMode(false); VizBridge.nativeSetMode(m) },
             onAlgo = { i -> algoIdx = i; VizBridge.nativeSetAlgorithm(i) },
             onPlay = { playing = !playing; VizBridge.nativeSetPlaying(playing) },
@@ -245,6 +247,7 @@ private fun VizScreen() {
             onVolume = { v -> volume = v; VizBridge.nativeSetVolume(v) },
             onScale = { i -> scaleIdx = i; VizBridge.nativeSetScale(i) },
             onSlow = { i -> slowIdx = i; VizBridge.nativeSetSlow(SLOW_MS[i]) },
+            onRaceMode = { m -> raceMode = m; VizBridge.nativeSetRaceMode(m) },
             onLoop = { b -> loop = b; VizBridge.nativeSetAutoLoop(b) },
             onFinishFx = { b -> finishFx = b },
             onCollapse = { controlsOpen = false },
@@ -448,12 +451,12 @@ private fun ControlPanel(
     mode: Int, playing: Boolean, algoIdx: Int, algoNames: Array<String>,
     speed: Int, size: Int, sound: Boolean, volume: Float, loop: Boolean,
     drawMode: Boolean, stats: String, scaleIdx: Int, scaleNames: Array<String>, finishFx: Boolean,
-    slowIdx: Int,
+    slowIdx: Int, raceMode: Int,
     onMode: (Int) -> Unit, onAlgo: (Int) -> Unit, onPlay: () -> Unit, onStep: (Int) -> Unit,
     onReset: () -> Unit, onShuffle: () -> Unit, onDraw: () -> Unit,
     onSpeed: (Int) -> Unit, onSize: (Int) -> Unit, onSound: (Boolean) -> Unit,
     onVolume: (Float) -> Unit, onScale: (Int) -> Unit, onLoop: (Boolean) -> Unit,
-    onFinishFx: (Boolean) -> Unit, onSlow: (Int) -> Unit, onCollapse: () -> Unit,
+    onFinishFx: (Boolean) -> Unit, onSlow: (Int) -> Unit, onRaceMode: (Int) -> Unit, onCollapse: () -> Unit,
 ) {
     Surface(modifier, tonalElevation = 3.dp) {
         Column(
@@ -525,6 +528,16 @@ private fun ControlPanel(
                     }
                 }
             } else {
+                Row(verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Race", fontSize = 12.sp)
+                    FilterChip(selected = raceMode == 0, onClick = { onRaceMode(0) },
+                        label = { Text("Fair") },
+                        modifier = Modifier.semantics { contentDescription = "Fair" })
+                    FilterChip(selected = raceMode == 1, onClick = { onRaceMode(1) },
+                        label = { Text("Worst case") },
+                        modifier = Modifier.semantics { contentDescription = "Worst case" })
+                }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Button(onClick = onPlay, modifier = Modifier.weight(1f).semantics { contentDescription = if (playing) "Pause" else "Play" }) {
                         Icon(if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow, contentDescription = null)

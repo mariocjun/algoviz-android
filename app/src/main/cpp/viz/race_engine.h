@@ -20,6 +20,8 @@ public:
 
     void set_size(int n);          // clamp + reset
     void set_speed(int s);
+    void set_slow_period_ms(int ms);   // 0 = off; else 1 step / ms (slow mode)
+    void set_input_mode(int mode);     // 0 = fair (same shuffle); 1 = worst case (reversed)
     void set_playing(bool p) { playing_ = p; }
     void toggle_play() { playing_ = !playing_; }
     void set_auto_loop(bool b) { auto_loop_ = b; }
@@ -54,11 +56,14 @@ private:
         int last_value = 0;
     };
 
-    void advance();
+    void advance(int steps);
 
     std::vector<Lane> lanes_;
     int size_ = 64;
     int speed_ = 6;
+    int input_mode_ = 0;        // 0 = fair (same shuffle), 1 = worst case (reversed)
+    float slow_period_ = 0.0f;  // seconds per single step in slow mode (0 = off)
+    float slow_accum_ = 0.0f;
     bool playing_ = true;
     bool auto_loop_ = true;
     int finished_count_ = 0;

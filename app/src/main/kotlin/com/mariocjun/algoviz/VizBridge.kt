@@ -32,6 +32,7 @@ object VizBridge {
     external fun nativeCelebrate()
     external fun nativePlayNote(v01: Float)
     external fun nativeSetSlow(ms: Int)
+    external fun nativeSetRaceMode(m: Int)
     external fun nativeUpdate(dt: Float)
     external fun nativeFill(buffer: ByteBuffer): Int
     external fun nativeAudioResume()
