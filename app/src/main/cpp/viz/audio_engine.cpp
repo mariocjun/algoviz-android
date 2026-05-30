@@ -21,9 +21,40 @@ constexpr float kPi = 3.14159265358979323846f;
 // pitch, with a low warm fundamental (the previous A3+4-octave range topped out
 // near 3 kHz, which read as harsh/treble). Major pentatonic keeps any cluster
 // consonant; a gentle master low-pass rounds off the last edge.
-constexpr int kScale[5] = {0, 2, 4, 7, 9};
-constexpr int kOctaves = 3;
-constexpr int kScaleSteps = 5 * kOctaves;
+constexpr int kOctaves = 3;   // each scale spans this many octaves of the value range
+
+// Scales as semitone offsets within one octave. Pentatonic + the seven
+// Greek/church modes keep dense clusters consonant; whole-tone/blues add colour;
+// chromatic is the full 12 tones. Order here == the menu order in the UI.
+constexpr int kMajPent[]    = {0, 2, 4, 7, 9};
+constexpr int kMinPent[]    = {0, 3, 5, 7, 10};
+constexpr int kIonian[]     = {0, 2, 4, 5, 7, 9, 11};   // major
+constexpr int kDorian[]     = {0, 2, 3, 5, 7, 9, 10};
+constexpr int kPhrygian[]   = {0, 1, 3, 5, 7, 8, 10};
+constexpr int kLydian[]     = {0, 2, 4, 6, 7, 9, 11};
+constexpr int kMixolydian[] = {0, 2, 4, 5, 7, 9, 10};
+constexpr int kAeolian[]    = {0, 2, 3, 5, 7, 8, 10};   // natural minor
+constexpr int kLocrian[]    = {0, 1, 3, 5, 6, 8, 10};
+constexpr int kWholeTone[]  = {0, 2, 4, 6, 8, 10};
+constexpr int kBlues[]      = {0, 3, 5, 6, 7, 10};
+constexpr int kChromatic[]  = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
+
+struct Scale { const char* name; const int* degrees; int count; };
+constexpr Scale kScales[] = {
+    {"Maj Pentatonic", kMajPent, 5},
+    {"Min Pentatonic", kMinPent, 5},
+    {"Ionian (major)", kIonian, 7},
+    {"Dorian", kDorian, 7},
+    {"Phrygian", kPhrygian, 7},
+    {"Lydian", kLydian, 7},
+    {"Mixolydian", kMixolydian, 7},
+    {"Aeolian (minor)", kAeolian, 7},
+    {"Locrian", kLocrian, 7},
+    {"Whole tone", kWholeTone, 6},
+    {"Blues", kBlues, 6},
+    {"Chromatic", kChromatic, 12},
+};
+constexpr int kScaleCount = static_cast<int>(sizeof(kScales) / sizeof(kScales[0]));
 constexpr float kBaseHz = 98.0f;            // G2 — low/warm, range tops out ~660 Hz
 
 constexpr float kAttackSeconds = 0.010f;    // soft, click-free onset
@@ -35,15 +66,19 @@ constexpr float kLowpassHz = 2600.0f;       // master one-pole LP cutoff
 constexpr float kMinOnsetSeconds = 0.09f;   // >=90 ms between note onsets (~11/s
                                             // max) so notes separate, never fuse
 
-float pentatonic_hz(float value01) {
+float scale_hz(float value01, int scale_idx) {
     if (value01 < 0.0f) value01 = 0.0f;
     if (value01 > 1.0f) value01 = 1.0f;
-    int idx = static_cast<int>(value01 * static_cast<float>(kScaleSteps - 1) + 0.5f);
+    if (scale_idx < 0) scale_idx = 0;
+    if (scale_idx > kScaleCount - 1) scale_idx = kScaleCount - 1;
+    const Scale& sc = kScales[scale_idx];
+    const int steps = sc.count * kOctaves;
+    int idx = static_cast<int>(value01 * static_cast<float>(steps - 1) + 0.5f);
     if (idx < 0) idx = 0;
-    if (idx > kScaleSteps - 1) idx = kScaleSteps - 1;
-    const int octave = idx / 5;
-    const int degree = idx % 5;
-    const int semitones = octave * 12 + kScale[degree];
+    if (idx > steps - 1) idx = steps - 1;
+    const int octave = idx / sc.count;
+    const int degree = idx % sc.count;
+    const int semitones = octave * 12 + sc.degrees[degree];
     return kBaseHz * std::pow(2.0f, static_cast<float>(semitones) / 12.0f);
 }
 
@@ -140,7 +175,15 @@ bool AudioEngine::ring_pop(float& f) {
 void AudioEngine::note(float value01) {
     if (!enabled_.load(std::memory_order_relaxed)) return;
     if (!running_.load(std::memory_order_relaxed)) return;
-    ring_push(pentatonic_hz(value01));   // drop silently if the ring is full
+    const int scale = scale_idx_.load(std::memory_order_relaxed);
+    ring_push(scale_hz(value01, scale));   // drop silently if the ring is full
+}
+
+int AudioEngine::scale_count() { return kScaleCount; }
+
+const char* AudioEngine::scale_name(int i) {
+    if (i < 0 || i >= kScaleCount) return "";
+    return kScales[i].name;
 }
 
 void AudioEngine::trigger(float freq) {

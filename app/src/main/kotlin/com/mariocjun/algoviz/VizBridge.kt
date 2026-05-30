@@ -28,9 +28,11 @@ object VizBridge {
     external fun nativeSetAutoLoop(b: Boolean)
     external fun nativeSetSound(e: Boolean)
     external fun nativeSetVolume(v: Float)
+    external fun nativeSetScale(i: Int)
     external fun nativeUpdate(dt: Float)
     external fun nativeFill(buffer: ByteBuffer): Int
     external fun nativeAudioResume()
     external fun nativeAudioPause()
     external fun nativeAlgoNames(): Array<String>
+    external fun nativeScaleNames(): Array<String>
 }

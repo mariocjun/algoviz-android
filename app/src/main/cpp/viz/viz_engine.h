@@ -36,6 +36,7 @@ public:
     void set_auto_loop(bool b) { single_.set_auto_loop(b); race_.set_auto_loop(b); }
     void set_sound(bool e);
     void set_volume(float v);
+    void set_scale(int i);
 
     void update(float dt_seconds);
     int fill(int* buf, int cap);   // returns ints written, 0 if cap too small

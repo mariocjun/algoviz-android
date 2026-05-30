@@ -90,6 +90,10 @@ Java_com_mariocjun_algoviz_VizBridge_nativeSetVolume(JNIEnv* /*env*/, jobject /*
     engine()->set_volume(v);
 }
 JNIEXPORT void JNICALL
+Java_com_mariocjun_algoviz_VizBridge_nativeSetScale(JNIEnv* /*env*/, jobject /*thiz*/, jint i) {
+    engine()->set_scale(i);
+}
+JNIEXPORT void JNICALL
 Java_com_mariocjun_algoviz_VizBridge_nativeUpdate(JNIEnv* /*env*/, jobject /*thiz*/, jfloat dt) {
     engine()->update(dt);
 }
@@ -107,6 +111,18 @@ Java_com_mariocjun_algoviz_VizBridge_nativeAudioResume(JNIEnv* /*env*/, jobject 
 JNIEXPORT void JNICALL
 Java_com_mariocjun_algoviz_VizBridge_nativeAudioPause(JNIEnv* /*env*/, jobject /*thiz*/) {
     g_audio.stop();
+}
+JNIEXPORT jobjectArray JNICALL
+Java_com_mariocjun_algoviz_VizBridge_nativeScaleNames(JNIEnv* env, jobject /*thiz*/) {
+    const int n = viz::AudioEngine::scale_count();
+    jclass str_cls = env->FindClass("java/lang/String");
+    jobjectArray arr = env->NewObjectArray(static_cast<jsize>(n), str_cls, nullptr);
+    for (int i = 0; i < n; ++i) {
+        jstring s = env->NewStringUTF(viz::AudioEngine::scale_name(i));
+        env->SetObjectArrayElement(arr, static_cast<jsize>(i), s);
+        env->DeleteLocalRef(s);
+    }
+    return arr;
 }
 JNIEXPORT jobjectArray JNICALL
 Java_com_mariocjun_algoviz_VizBridge_nativeAlgoNames(JNIEnv* env, jobject /*thiz*/) {

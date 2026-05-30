@@ -2,9 +2,11 @@
 //
 // Goal (from the brief): "a satisfying, rounded ASMR sound, pleasant at any
 // speed and quantity." Three design choices make that true:
-//   1. Pentatonic quantization — every element value maps to a note on a major
-//      pentatonic scale, so ANY combination of simultaneous/rapid notes is
-//      consonant. No matter how fast or how many fire, it can't sound wrong.
+//   1. Scale quantization — every element value maps to a note on the selected
+//      scale: major/minor pentatonic, the seven Greek/church modes (Ionian …
+//      Locrian), whole-tone, blues, or chromatic. Pentatonic/modal scales keep
+//      ANY combination of simultaneous/rapid notes consonant; the scale is
+//      chosen at runtime (set_scale).
 //   2. Pure-ish sine voices (fundamental + soft harmonics) with a short attack
 //      and exponential decay — rounded, click-free, bell/marimba-like.
 //   3. Polyphony cap + tanh soft-limiter — dense passages stay smooth, never
@@ -51,6 +53,13 @@ public:
     // the GL thread; lock-free. No-op when disabled or the ring is full.
     void note(float value01);
 
+    // Musical scale/mode selection. Safe from any thread; the new scale takes
+    // effect on the next note. scale_name/scale_count expose the menu to the UI.
+    void set_scale(int i) { scale_idx_.store(i < 0 ? 0 : i, std::memory_order_relaxed); }
+    int scale() const { return scale_idx_.load(std::memory_order_relaxed); }
+    static int scale_count();
+    static const char* scale_name(int i);
+
     // Realtime render entry — called only by the AAudio data callback.
     void render(float* out, int32_t num_frames);
 
@@ -76,6 +85,7 @@ private:
     std::atomic<bool> enabled_{true};
     std::atomic<float> volume_{0.6f};
     std::atomic<bool> running_{false};
+    std::atomic<int> scale_idx_{0};    // index into kScales (UI thread writes)
 
     static constexpr int kRing = 256;
     float ring_[kRing] = {};
