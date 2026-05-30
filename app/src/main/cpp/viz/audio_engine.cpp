@@ -59,8 +59,8 @@ constexpr float kBaseHz = 98.0f;            // G2 — low/warm, range tops out ~
 
 constexpr float kAttackSeconds = 0.010f;    // soft, click-free onset
 constexpr float kDecayTau = 0.30f;          // longer, rounder tail
-constexpr float kVoiceAmp = 0.26f;
-constexpr float kCelebAmp = 0.42f;          // louder voices for the completion flourish
+constexpr float kVoiceAmp = 0.20f;          // lower => more headroom (less rasp/distortion)
+constexpr float kCelebAmp = 0.30f;          // louder voices for the completion flourish
 constexpr float kGlideTau = 0.045f;         // ~45 ms upward pitch glide ("bloop")
 constexpr float kGlideStart = 0.7937f;      // start −4 semitones below target (2^(-4/12))
 constexpr float kLowpassHz = 2600.0f;       // master one-pole LP cutoff
@@ -83,8 +83,10 @@ float scale_hz(float value01, int scale_idx) {
     return kBaseHz * std::pow(2.0f, static_cast<float>(semitones) / 12.0f);
 }
 
-aaudio_data_callback_result_t data_callback(AAudioStream* /*stream*/, void* user,
+aaudio_data_callback_result_t data_callback(AAudioStream* stream, void* user,
                                             void* audio_data, int32_t num_frames) {
+    static int cb = 0;
+    if ((++cb & 1023) == 0) ALOGI("xruns=%d", AAudioStream_getXRunCount(stream));
     static_cast<AudioEngine*>(user)->render(static_cast<float*>(audio_data), num_frames);
     return AAUDIO_CALLBACK_RESULT_CONTINUE;
 }
@@ -128,6 +130,11 @@ bool AudioEngine::start() {
     if (sample_rate_ <= 0) sample_rate_ = 48000;
     if (channels_ <= 0) channels_ = 2;
 
+    // Give the callback a few bursts of buffer headroom instead of the tight
+    // low-latency default — underruns (xruns) are what crackle/"chiado".
+    const int32_t burst = AAudioStream_getFramesPerBurst(stream_);
+    if (burst > 0) AAudioStream_setBufferSizeInFrames(stream_, burst * 4);
+
     r = AAudioStream_requestStart(stream_);
     if (r != AAUDIO_OK) {
         ALOGE("AAudio requestStart failed: %s", AAudio_convertResultToText(r));
@@ -136,7 +143,8 @@ bool AudioEngine::start() {
         return false;
     }
     running_.store(true, std::memory_order_relaxed);
-    ALOGI("audio started: %d Hz, %d ch", sample_rate_, channels_);
+    ALOGI("audio started: %d Hz, %d ch, burst=%d buf=%d", sample_rate_, channels_,
+          burst, AAudioStream_getBufferSizeInFrames(stream_));
     return true;
 }
 
@@ -262,7 +270,10 @@ void AudioEngine::render(float* out, int32_t num_frames) {
         float mix = 0.0f;
         for (Voice& v : voices_) {
             if (!v.active) continue;
-            mix += std::sin(2.0f * kPi * v.phase) * v.env * v.amp;   // pure sine = round
+            // fundamental + a touch of 2nd harmonic for body (less thin / low-quality)
+            const float s1 = std::sin(2.0f * kPi * v.phase);
+            const float s2 = std::sin(4.0f * kPi * v.phase);
+            mix += (s1 + 0.16f * s2) * v.env * v.amp;
 
             v.inc += (v.inc_target - v.inc) * glide_coef;            // rising "bloop"
             v.phase += v.inc;
@@ -276,7 +287,7 @@ void AudioEngine::render(float* out, int32_t num_frames) {
                 if (v.env < 0.0008f) v.active = false;
             }
         }
-        const float sat = std::tanh(mix * 0.9f);          // soft-limit dense passages
+        const float sat = std::tanh(mix * 0.7f);          // gentler soft-limit (less rasp)
         lp_state_ += (sat - lp_state_) * lp_coef;          // one-pole low-pass
         const float sample = lp_state_ * gain;
         for (int c = 0; c < ch; ++c) out[frame * ch + c] = sample;
