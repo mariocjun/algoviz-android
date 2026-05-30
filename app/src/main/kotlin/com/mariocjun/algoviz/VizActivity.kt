@@ -25,7 +25,21 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
@@ -51,6 +65,8 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -103,13 +119,29 @@ private fun VizScreen() {
     var mode by remember { mutableIntStateOf(0) }
     var playing by remember { mutableStateOf(true) }
     var algoIdx by remember { mutableIntStateOf(3) }
-    var speed by remember { mutableIntStateOf(8) }
-    var size by remember { mutableIntStateOf(96) }
+    var speed by remember { mutableIntStateOf(1) }    // always start at minimum speed
+    var size by remember { mutableIntStateOf(16) }    // always start at minimum bar count
     var sound by remember { mutableStateOf(true) }
     var volume by remember { mutableFloatStateOf(0.6f) }
     var loop by remember { mutableStateOf(true) }
     var drawMode by remember { mutableStateOf(false) }
     var controlsOpen by remember { mutableStateOf(true) }
+    var scaleIdx by remember { mutableIntStateOf(0) }
+    val scaleNames = remember { runCatching { VizBridge.nativeScaleNames() }.getOrDefault(emptyArray()) }
+
+    // Push initial UI state into the engine so the two never disagree (the C++
+    // engine has its own defaults; the UI is the source of truth on launch).
+    LaunchedEffect(Unit) {
+        VizBridge.nativeSetMode(mode)
+        VizBridge.nativeSetAlgorithm(algoIdx)
+        VizBridge.nativeSetSpeed(speed)
+        VizBridge.nativeSetSize(size)
+        VizBridge.nativeSetScale(scaleIdx)
+        VizBridge.nativeSetSound(sound)
+        VizBridge.nativeSetVolume(volume)
+        VizBridge.nativeSetAutoLoop(loop)
+        VizBridge.nativeSetPlaying(playing)
+    }
 
     LaunchedEffect(Unit) {
         var last = 0L
@@ -151,6 +183,7 @@ private fun VizScreen() {
             mode = mode, playing = playing, algoIdx = algoIdx, algoNames = algoNames,
             speed = speed, size = size, sound = sound, volume = volume, loop = loop,
             drawMode = drawMode, stats = stats,
+            scaleIdx = scaleIdx, scaleNames = scaleNames,
             onMode = { m -> mode = m; drawMode = false; VizBridge.nativeSetDrawMode(false); VizBridge.nativeSetMode(m) },
             onAlgo = { i -> algoIdx = i; VizBridge.nativeSetAlgorithm(i) },
             onPlay = { playing = !playing; VizBridge.nativeSetPlaying(playing) },
@@ -162,6 +195,7 @@ private fun VizScreen() {
             onSize = { s -> size = s; VizBridge.nativeSetSize(s) },
             onSound = { e -> sound = e; VizBridge.nativeSetSound(e) },
             onVolume = { v -> volume = v; VizBridge.nativeSetVolume(v) },
+            onScale = { i -> scaleIdx = i; VizBridge.nativeSetScale(i) },
             onLoop = { b -> loop = b; VizBridge.nativeSetAutoLoop(b) },
             onCollapse = { controlsOpen = false },
         )
@@ -190,7 +224,9 @@ private fun VizScreen() {
 private fun MenuPill(onClick: () -> Unit) {
     Box(Modifier.fillMaxSize().padding(10.dp)) {
         FilledTonalButton(onClick = onClick, modifier = Modifier.align(Alignment.TopStart)) {
-            Text("☰ Menu")
+            Icon(Icons.Filled.Menu, contentDescription = "Menu")
+            Spacer(Modifier.width(6.dp))
+            Text("Menu")
         }
     }
 }
@@ -312,11 +348,11 @@ private fun ControlPanel(
     modifier: Modifier,
     mode: Int, playing: Boolean, algoIdx: Int, algoNames: Array<String>,
     speed: Int, size: Int, sound: Boolean, volume: Float, loop: Boolean,
-    drawMode: Boolean, stats: String,
+    drawMode: Boolean, stats: String, scaleIdx: Int, scaleNames: Array<String>,
     onMode: (Int) -> Unit, onAlgo: (Int) -> Unit, onPlay: () -> Unit, onStep: (Int) -> Unit,
     onReset: () -> Unit, onShuffle: () -> Unit, onDraw: () -> Unit,
     onSpeed: (Int) -> Unit, onSize: (Int) -> Unit, onSound: (Boolean) -> Unit,
-    onVolume: (Float) -> Unit, onLoop: (Boolean) -> Unit, onCollapse: () -> Unit,
+    onVolume: (Float) -> Unit, onScale: (Int) -> Unit, onLoop: (Boolean) -> Unit, onCollapse: () -> Unit,
 ) {
     Surface(modifier, tonalElevation = 3.dp) {
         Column(
@@ -327,10 +363,12 @@ private fun ControlPanel(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(selected = mode == 0, onClick = { onMode(0) }, label = { Text("Single") })
-                FilterChip(selected = mode == 1, onClick = { onMode(1) }, label = { Text("Race") })
+                FilterChip(selected = mode == 0, onClick = { onMode(0) }, label = { Text("Single") },
+                    modifier = Modifier.semantics { contentDescription = "Single" })
+                FilterChip(selected = mode == 1, onClick = { onMode(1) }, label = { Text("Race") },
+                    modifier = Modifier.semantics { contentDescription = "Race" })
                 Spacer(Modifier.weight(1f))
-                Button(onClick = onCollapse) { Text("Hide") }
+                Button(onClick = onCollapse) { Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Hide") }
             }
             Row(verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -339,28 +377,63 @@ private fun ControlPanel(
                 Text("Vol")
                 Slider(value = volume, onValueChange = onVolume, modifier = Modifier.weight(1f))
             }
+            // Scale / mode picker — sets how element values quantize to pitches
+            // (pentatonic, the Greek modes, whole-tone, blues, chromatic).
+            if (scaleNames.isNotEmpty()) {
+                Text("Scale", fontSize = 12.sp)
+                Row(Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    scaleNames.forEachIndexed { i, name ->
+                        FilterChip(selected = i == scaleIdx, onClick = { onScale(i) },
+                            label = { Text(name) },
+                            modifier = Modifier.semantics { contentDescription = name })
+                    }
+                }
+            }
             if (mode == 0) {
                 Row(Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     algoNames.forEachIndexed { i, name ->
-                        FilterChip(selected = i == algoIdx, onClick = { onAlgo(i) }, label = { Text(name) })
+                        FilterChip(selected = i == algoIdx, onClick = { onAlgo(i) }, label = { Text(name) },
+                            modifier = Modifier.semantics { contentDescription = name })
                     }
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Button(onClick = onPlay, modifier = Modifier.weight(1f)) { Text(if (playing) "Pause" else "Play") }
-                    Button(onClick = { onStep(-1) }, modifier = Modifier.weight(1f)) { Text("◀") }
-                    Button(onClick = { onStep(1) }, modifier = Modifier.weight(1f)) { Text("▶") }
+                    Button(onClick = onPlay, modifier = Modifier.weight(1f)) {
+                        Icon(if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                            contentDescription = if (playing) "Pause" else "Play")
+                    }
+                    Button(onClick = { onStep(-1) }, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Filled.SkipPrevious, contentDescription = "Step back")
+                    }
+                    Button(onClick = { onStep(1) }, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Filled.SkipNext, contentDescription = "Step forward")
+                    }
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Button(onClick = onReset, modifier = Modifier.weight(1f)) { Text("Reset") }
-                    Button(onClick = onShuffle, modifier = Modifier.weight(1f)) { Text("Shuffle") }
-                    FilledTonalButton(onClick = onDraw, modifier = Modifier.weight(1f)) { Text(if (drawMode) "Sort" else "Draw") }
+                    Button(onClick = onReset, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Filled.Refresh, contentDescription = "Reset")
+                    }
+                    Button(onClick = onShuffle, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Filled.Shuffle, contentDescription = "Shuffle")
+                    }
+                    FilledTonalButton(onClick = onDraw, modifier = Modifier.weight(1f)) {
+                        Icon(if (drawMode) Icons.Filled.Sort else Icons.Filled.Edit,
+                            contentDescription = if (drawMode) "Sort" else "Draw")
+                    }
                 }
             } else {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Button(onClick = onPlay, modifier = Modifier.weight(1f)) { Text(if (playing) "Pause" else "Play") }
-                    Button(onClick = onReset, modifier = Modifier.weight(1f)) { Text("Reset") }
-                    Button(onClick = onShuffle, modifier = Modifier.weight(1f)) { Text("Shuffle") }
+                    Button(onClick = onPlay, modifier = Modifier.weight(1f)) {
+                        Icon(if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                            contentDescription = if (playing) "Pause" else "Play")
+                    }
+                    Button(onClick = onReset, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Filled.Refresh, contentDescription = "Reset")
+                    }
+                    Button(onClick = onShuffle, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Filled.Shuffle, contentDescription = "Shuffle")
+                    }
                 }
             }
             StepperRow("Speed", speed, 1, 512, 1, onSpeed)
@@ -374,13 +447,17 @@ private fun ControlPanel(
 private fun StepperRow(label: String, value: Int, lo: Int, hi: Int, step: Int, onChange: (Int) -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text("$label $value", fontSize = 12.sp, maxLines = 1, modifier = Modifier.width(86.dp))
-        Button(onClick = { onChange((value - step).coerceAtLeast(lo)) }) { Text("−") }
+        Button(onClick = { onChange((value - step).coerceAtLeast(lo)) }) {
+            Icon(Icons.Filled.Remove, contentDescription = "decrease $label")
+        }
         Slider(
             value = value.toFloat(),
             onValueChange = { onChange(it.roundToInt().coerceIn(lo, hi)) },
             valueRange = lo.toFloat()..hi.toFloat(),
             modifier = Modifier.weight(1f),
         )
-        Button(onClick = { onChange((value + step).coerceAtMost(hi)) }) { Text("+") }
+        Button(onClick = { onChange((value + step).coerceAtMost(hi)) }) {
+            Icon(Icons.Filled.Add, contentDescription = "increase $label")
+        }
     }
 }
