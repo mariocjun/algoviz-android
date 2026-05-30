@@ -84,8 +84,27 @@ import kotlin.math.ceil
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
-private fun barColor(v01: Float, sat: Float, value: Float): Color =
-    Color.hsv((v01 * 0.82f * 360f).coerceIn(0f, 360f), sat, value)
+private fun barColor(
+    v01: Float, bright: Boolean, noteCount: Int,
+    degreeOn: Boolean, moodOn: Boolean, mood: Float,
+): Color {
+    val hue = (v01 * 0.82f * 360f).coerceIn(0f, 360f)
+    var sat = if (bright) 0.80f else 0.62f
+    var value = if (bright) 1.00f else 0.90f
+    if (degreeOn && noteCount > 0) {                       // emphasise chord tones
+        val steps = noteCount * 3                          // kOctaves = 3
+        val idx = (v01 * (steps - 1) + 0.5f).toInt().coerceIn(0, steps - 1)
+        when (idx % noteCount) {
+            0, 2, 4 -> { sat = (sat + 0.18f).coerceAtMost(1f); value = 1f }   // root/3rd/5th
+            else -> { sat *= 0.55f; value *= 0.66f }                          // tensions: dim
+        }
+    }
+    if (moodOn) {                                          // sad → darker, grand → brighter
+        value *= (0.50f + 0.50f * mood)
+        sat *= (0.65f + 0.35f * mood)
+    }
+    return Color.hsv(hue, sat.coerceIn(0f, 1f), value.coerceIn(0f, 1f))
+}
 
 // Compact counter formatting so the stats line stays short (and stable-width)
 // no matter how large the comparison/swap/step counts grow.
@@ -99,6 +118,24 @@ private fun fmt(n: Int): String = when {
 // step (0 = off, use the normal speed). Slowest = one operation every 2 s.
 private val SLOW_LABELS = arrayOf("Off", "1/2s", "1/s", "2/s", "4/s")
 private val SLOW_MS = intArrayOf(0, 2000, 1000, 500, 250)
+
+// Each scale/mode has a "mood" in [0,1] — 0 = dark/sad, 1 = bright/grand — that
+// shifts the bar brightness + saturation when Mood colouring is on. Order matches
+// the scale menu.
+private val SCALE_MOOD = floatArrayOf(
+    0.88f, // Maj Pentatonic — cheerful
+    0.42f, // Min Pentatonic — bluesy
+    0.95f, // Ionian (major) — bright/happy
+    0.62f, // Dorian — hopeful-melancholy
+    0.28f, // Phrygian — dark/exotic
+    1.00f, // Lydian — dreamy/grand
+    0.72f, // Mixolydian — warm
+    0.34f, // Aeolian (minor) — sad
+    0.18f, // Locrian — unstable/dark
+    0.78f, // Whole tone — floating
+    0.40f, // Blues — gritty
+    0.50f, // Chromatic — tense
+)
 
 class VizActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -149,6 +186,9 @@ private fun VizScreen() {
     var rewinding by remember { mutableStateOf(false) }   // VHS rewind (long-press + drag left)
     var slowIdx by remember { mutableIntStateOf(0) }      // slow-motion rate (0 = off; <=32 bars only)
     var raceMode by remember { mutableIntStateOf(0) }     // 0 = fair race, 1 = worst case
+    var scaleNotes by remember { mutableIntStateOf(5) }   // notes/octave of the active scale
+    var degreeColor by remember { mutableStateOf(true) }  // highlight chord tones (root/3rd/5th)
+    var moodColor by remember { mutableStateOf(true) }    // mode-mood brightness/saturation
 
     // Push initial UI state into the engine so the two never disagree (the C++
     // engine has its own defaults; the UI is the source of truth on launch).
@@ -158,6 +198,7 @@ private fun VizScreen() {
         VizBridge.nativeSetSpeed(speed)
         VizBridge.nativeSetSize(size)
         VizBridge.nativeSetScale(scaleIdx)
+        scaleNotes = VizBridge.nativeScaleNotes(scaleIdx)
         VizBridge.nativeSetSlow(SLOW_MS[slowIdx])
         VizBridge.nativeSetRaceMode(raceMode)
         VizBridge.nativeSetSound(sound)
@@ -224,6 +265,10 @@ private fun VizScreen() {
             rewinding = rewinding,
             onRewindActive = { active -> rewinding = active; if (active) playing = false },
             onRewindStep = { VizBridge.nativeStep(-1) },
+            noteCount = scaleNotes,
+            degreeOn = degreeColor,
+            moodOn = moodColor,
+            mood = SCALE_MOOD.getOrElse(scaleIdx) { 0.7f },
         )
     }
 
@@ -234,6 +279,7 @@ private fun VizScreen() {
             speed = speed, size = size, sound = sound, volume = volume, loop = loop,
             drawMode = drawMode, stats = stats,
             scaleIdx = scaleIdx, scaleNames = scaleNames, finishFx = finishFx, slowIdx = slowIdx, raceMode = raceMode,
+            degreeColor = degreeColor, moodColor = moodColor,
             onMode = { m -> mode = m; drawMode = false; VizBridge.nativeSetDrawMode(false); VizBridge.nativeSetMode(m) },
             onAlgo = { i -> algoIdx = i; VizBridge.nativeSetAlgorithm(i) },
             onPlay = { playing = !playing; VizBridge.nativeSetPlaying(playing) },
@@ -245,9 +291,11 @@ private fun VizScreen() {
             onSize = { s -> size = s; VizBridge.nativeSetSize(s); if (s > 32 && slowIdx != 0) { slowIdx = 0; VizBridge.nativeSetSlow(0) } },
             onSound = { e -> sound = e; VizBridge.nativeSetSound(e) },
             onVolume = { v -> volume = v; VizBridge.nativeSetVolume(v) },
-            onScale = { i -> scaleIdx = i; VizBridge.nativeSetScale(i) },
+            onScale = { i -> scaleIdx = i; VizBridge.nativeSetScale(i); scaleNotes = VizBridge.nativeScaleNotes(i) },
             onSlow = { i -> slowIdx = i; VizBridge.nativeSetSlow(SLOW_MS[i]) },
             onRaceMode = { m -> raceMode = m; VizBridge.nativeSetRaceMode(m) },
+            onDegreeColor = { b -> degreeColor = b },
+            onMoodColor = { b -> moodColor = b },
             onLoop = { b -> loop = b; VizBridge.nativeSetAutoLoop(b) },
             onFinishFx = { b -> finishFx = b },
             onCollapse = { controlsOpen = false },
@@ -301,6 +349,10 @@ private fun VizCanvas(
     rewinding: Boolean,
     onRewindActive: (Boolean) -> Unit,
     onRewindStep: () -> Unit,
+    noteCount: Int,
+    degreeOn: Boolean,
+    moodOn: Boolean,
+    mood: Float,
 ) {
     Canvas(
         modifier
@@ -347,13 +399,16 @@ private fun VizCanvas(
             }
     ) {
         if (frame < 0L) return@Canvas   // reference `frame` so the draw re-runs each tick
-        if (ints.get(0) == 0) drawSingle(ints) else drawRace(ints, algoNames, measurer)
+        if (ints.get(0) == 0) drawSingle(ints, noteCount, degreeOn, moodOn, mood)
+        else drawRace(ints, algoNames, measurer, noteCount, degreeOn, moodOn, mood)
         if (flash > 0f) drawRect(color = Color.White, size = size, alpha = (flash * 0.85f).coerceIn(0f, 1f))
         if (rewinding) drawVhs(frame, measurer)
     }
 }
 
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawSingle(ints: java.nio.IntBuffer) {
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawSingle(
+    ints: java.nio.IntBuffer, noteCount: Int, degreeOn: Boolean, moodOn: Boolean, mood: Float,
+) {
     val n = ints.get(1)
     if (n <= 0) return
     val hiA = ints.get(2); val hiB = ints.get(3); val finished = ints.get(4) == 1
@@ -362,11 +417,8 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawSingle(ints: ja
         val v = ints.get(10 + i)
         val v01 = v.toFloat() / n
         val h = v01 * size.height
-        val col = when {
-            !finished && (i == hiA || i == hiB) -> Color.White
-            finished -> barColor(v01, 0.78f, 1f)
-            else -> barColor(v01, 0.60f, 0.92f)
-        }
+        val col = if (!finished && (i == hiA || i == hiB)) Color.White
+                  else barColor(v01, finished, noteCount, degreeOn, moodOn, mood)
         drawRect(col, Offset(i * w, size.height - h), Size(maxOf(w - 1f, 1f), h))
     }
 }
@@ -392,6 +444,7 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawRace(
     ints: java.nio.IntBuffer,
     algoNames: Array<String>,
     measurer: androidx.compose.ui.text.TextMeasurer,
+    noteCount: Int, degreeOn: Boolean, moodOn: Boolean, mood: Float,
 ) {
     val L = ints.get(1)
     val n = ints.get(2)
@@ -424,11 +477,8 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawRace(
                 val v = ints.get(valuesOff + k * n + i)
                 val v01 = v.toFloat() / n
                 val h = v01 * areaH
-                val col = when {
-                    !finished && (i == hiA || i == hiB) -> Color.White
-                    finished -> barColor(v01, 0.78f, 1f)
-                    else -> barColor(v01, 0.58f, 0.90f)
-                }
+                val col = if (!finished && (i == hiA || i == hiB)) Color.White
+                          else barColor(v01, finished, noteCount, degreeOn, moodOn, mood)
                 drawRect(col, Offset(bx + i * bw, by1 - h), Size(maxOf(bw - 0.5f, 0.7f), h))
             }
         }
@@ -451,12 +501,13 @@ private fun ControlPanel(
     mode: Int, playing: Boolean, algoIdx: Int, algoNames: Array<String>,
     speed: Int, size: Int, sound: Boolean, volume: Float, loop: Boolean,
     drawMode: Boolean, stats: String, scaleIdx: Int, scaleNames: Array<String>, finishFx: Boolean,
-    slowIdx: Int, raceMode: Int,
+    slowIdx: Int, raceMode: Int, degreeColor: Boolean, moodColor: Boolean,
     onMode: (Int) -> Unit, onAlgo: (Int) -> Unit, onPlay: () -> Unit, onStep: (Int) -> Unit,
     onReset: () -> Unit, onShuffle: () -> Unit, onDraw: () -> Unit,
     onSpeed: (Int) -> Unit, onSize: (Int) -> Unit, onSound: (Boolean) -> Unit,
     onVolume: (Float) -> Unit, onScale: (Int) -> Unit, onLoop: (Boolean) -> Unit,
-    onFinishFx: (Boolean) -> Unit, onSlow: (Int) -> Unit, onRaceMode: (Int) -> Unit, onCollapse: () -> Unit,
+    onFinishFx: (Boolean) -> Unit, onSlow: (Int) -> Unit, onRaceMode: (Int) -> Unit,
+    onDegreeColor: (Boolean) -> Unit, onMoodColor: (Boolean) -> Unit, onCollapse: () -> Unit,
 ) {
     Surface(modifier, tonalElevation = 3.dp) {
         Column(
@@ -496,6 +547,15 @@ private fun ControlPanel(
                             modifier = Modifier.semantics { contentDescription = name })
                     }
                 }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Degrees", fontSize = 12.sp)
+                Switch(checked = degreeColor, onCheckedChange = onDegreeColor,
+                    modifier = Modifier.semantics { contentDescription = "Degrees" })
+                Text("Mood", fontSize = 12.sp)
+                Switch(checked = moodColor, onCheckedChange = onMoodColor,
+                    modifier = Modifier.semantics { contentDescription = "Mood" })
             }
             if (mode == 0) {
                 Row(Modifier.horizontalScroll(rememberScrollState()),

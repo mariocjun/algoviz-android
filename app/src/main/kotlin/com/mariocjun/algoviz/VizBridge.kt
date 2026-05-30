@@ -39,4 +39,5 @@ object VizBridge {
     external fun nativeAudioPause()
     external fun nativeAlgoNames(): Array<String>
     external fun nativeScaleNames(): Array<String>
+    external fun nativeScaleNotes(i: Int): Int
 }

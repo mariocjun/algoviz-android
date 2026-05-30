@@ -198,6 +198,11 @@ const char* AudioEngine::scale_name(int i) {
     return kScales[i].name;
 }
 
+int AudioEngine::scale_notes(int i) {
+    if (i < 0 || i >= kScaleCount) return 0;
+    return kScales[i].count;
+}
+
 void AudioEngine::trigger(float freq, float amp) {
     // Prefer a free voice; otherwise steal the QUIETEST (most-decayed) one. Blind
     // round-robin used to cut off notes that were still prominent, which is what

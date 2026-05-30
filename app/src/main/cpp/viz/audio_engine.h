@@ -59,6 +59,7 @@ public:
     int scale() const { return scale_idx_.load(std::memory_order_relaxed); }
     static int scale_count();
     static const char* scale_name(int i);
+    static int scale_notes(int i);   // notes-per-octave of scale i (for degree colouring)
 
     // Play a short, distinct, brighter arpeggio flourish (the sort-completion
     // "ta-da"). Safe from any thread; sequenced on the audio thread so the onset

@@ -93,6 +93,10 @@ JNIEXPORT void JNICALL
 Java_com_mariocjun_algoviz_VizBridge_nativeSetScale(JNIEnv* /*env*/, jobject /*thiz*/, jint i) {
     engine()->set_scale(i);
 }
+JNIEXPORT jint JNICALL
+Java_com_mariocjun_algoviz_VizBridge_nativeScaleNotes(JNIEnv* /*env*/, jobject /*thiz*/, jint i) {
+    return viz::AudioEngine::scale_notes(i);
+}
 JNIEXPORT void JNICALL
 Java_com_mariocjun_algoviz_VizBridge_nativeCelebrate(JNIEnv* /*env*/, jobject /*thiz*/) {
     engine()->celebrate();
