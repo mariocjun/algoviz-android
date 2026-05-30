@@ -13,6 +13,7 @@ scripts/device-registry.local.sh
 build/
 .cxx/
 captures/
+__pycache__/
 
 gradle/
 gradlew
