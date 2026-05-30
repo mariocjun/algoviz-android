@@ -11,6 +11,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
@@ -140,6 +141,7 @@ private fun VizScreen() {
     var flash by remember { mutableFloatStateOf(0f) }   // white overlay intensity, decays per frame
     var prevDone by remember { mutableStateOf(false) }
     var reStrike by remember { mutableStateOf(false) }
+    var rewinding by remember { mutableStateOf(false) }   // VHS rewind (long-press + drag left)
 
     // Push initial UI state into the engine so the two never disagree (the C++
     // engine has its own defaults; the UI is the source of truth on launch).
@@ -210,6 +212,9 @@ private fun VizScreen() {
             onSpeed = { d -> speed = (speed + d).coerceIn(1, 512); VizBridge.nativeSetSpeed(speed) },
             onPaint = { idx, v01 -> VizBridge.nativePaint(idx, v01) },
             onPlayNote = { v01 -> VizBridge.nativePlayNote(v01) },
+            rewinding = rewinding,
+            onRewindActive = { active -> rewinding = active; if (active) playing = false },
+            onRewindStep = { VizBridge.nativeStep(-1) },
         )
     }
 
@@ -282,6 +287,9 @@ private fun VizCanvas(
     onSpeed: (Int) -> Unit,
     onPaint: (Int, Float) -> Unit,
     onPlayNote: (Float) -> Unit,
+    rewinding: Boolean,
+    onRewindActive: (Boolean) -> Unit,
+    onRewindStep: () -> Unit,
 ) {
     Canvas(
         modifier
@@ -314,10 +322,23 @@ private fun VizCanvas(
                     }
                 }
             }
+            .pointerInput(Unit) {
+                // Press-and-hold then drag LEFT = rewind through the sort history.
+                detectDragGesturesAfterLongPress(
+                    onDragStart = { onRewindActive(true) },
+                    onDragEnd = { onRewindActive(false) },
+                    onDragCancel = { onRewindActive(false) },
+                    onDrag = { change, drag ->
+                        change.consume()
+                        if (drag.x < 0f) repeat((-drag.x / 3f).toInt().coerceIn(1, 30)) { onRewindStep() }
+                    },
+                )
+            }
     ) {
         if (frame < 0L) return@Canvas   // reference `frame` so the draw re-runs each tick
         if (ints.get(0) == 0) drawSingle(ints) else drawRace(ints, algoNames, measurer)
         if (flash > 0f) drawRect(color = Color.White, size = size, alpha = (flash * 0.85f).coerceIn(0f, 1f))
+        if (rewinding) drawVhs(frame, measurer)
     }
 }
 
@@ -337,6 +358,23 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawSingle(ints: ja
         }
         drawRect(col, Offset(i * w, size.height - h), Size(maxOf(w - 1f, 1f), h))
     }
+}
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawVhs(
+    frame: Long, measurer: androidx.compose.ui.text.TextMeasurer,
+) {
+    val w = size.width
+    val h = size.height
+    // VHS "tracking" — translucent horizontal bands sweeping down the screen.
+    for (i in 0 until 5) {
+        val y = (((frame * (7 + i * 11)) % 1000L).toFloat() / 1000f) * h
+        drawRect(Color.White, topLeft = Offset(0f, y), size = Size(w, 3f), alpha = 0.15f)
+    }
+    // "◀◀ REW" marker in the empty upper area (VHS reference).
+    val style = TextStyle(color = Color.White.copy(alpha = 0.85f), fontSize = 44.sp)
+    val m = measurer.measure("◀◀ REW", style)
+    drawText(measurer, "◀◀ REW",
+        topLeft = Offset(w / 2f - m.size.width / 2f, h * 0.15f), style = style)
 }
 
 private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawRace(
