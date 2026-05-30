@@ -7,6 +7,7 @@ namespace viz {
 void VizEngine::set_sound(bool e) { if (audio_ != nullptr) audio_->set_enabled(e); }
 void VizEngine::set_volume(float v) { if (audio_ != nullptr) audio_->set_volume(v); }
 void VizEngine::set_scale(int i) { if (audio_ != nullptr) audio_->set_scale(i); }
+void VizEngine::celebrate() { if (audio_ != nullptr) audio_->celebrate(); }
 
 void VizEngine::update(float dt_seconds) {
     float note;

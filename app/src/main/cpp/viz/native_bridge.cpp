@@ -94,6 +94,10 @@ Java_com_mariocjun_algoviz_VizBridge_nativeSetScale(JNIEnv* /*env*/, jobject /*t
     engine()->set_scale(i);
 }
 JNIEXPORT void JNICALL
+Java_com_mariocjun_algoviz_VizBridge_nativeCelebrate(JNIEnv* /*env*/, jobject /*thiz*/) {
+    engine()->celebrate();
+}
+JNIEXPORT void JNICALL
 Java_com_mariocjun_algoviz_VizBridge_nativeUpdate(JNIEnv* /*env*/, jobject /*thiz*/, jfloat dt) {
     engine()->update(dt);
 }

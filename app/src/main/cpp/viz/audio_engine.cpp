@@ -60,6 +60,7 @@ constexpr float kBaseHz = 98.0f;            // G2 — low/warm, range tops out ~
 constexpr float kAttackSeconds = 0.010f;    // soft, click-free onset
 constexpr float kDecayTau = 0.30f;          // longer, rounder tail
 constexpr float kVoiceAmp = 0.26f;
+constexpr float kCelebAmp = 0.42f;          // louder voices for the completion flourish
 constexpr float kGlideTau = 0.045f;         // ~45 ms upward pitch glide ("bloop")
 constexpr float kGlideStart = 0.7937f;      // start −4 semitones below target (2^(-4/12))
 constexpr float kLowpassHz = 2600.0f;       // master one-pole LP cutoff
@@ -151,6 +152,9 @@ void AudioEngine::stop() {
     lp_state_ = 0.0f;
     has_pending_ = false;
     frames_since_onset_ = 1 << 20;   // let the first note after a restart fire at once
+    celeb_len_ = 0;
+    celeb_i_ = 0;
+    celeb_seen_ = celebrate_req_.load(std::memory_order_relaxed);
     head_.store(0, std::memory_order_relaxed);
     tail_.store(0, std::memory_order_relaxed);
 }
@@ -186,7 +190,7 @@ const char* AudioEngine::scale_name(int i) {
     return kScales[i].name;
 }
 
-void AudioEngine::trigger(float freq) {
+void AudioEngine::trigger(float freq, float amp) {
     // Prefer a free voice; otherwise steal the QUIETEST (most-decayed) one. Blind
     // round-robin used to cut off notes that were still prominent, which is what
     // made dense passages rasp and restart instead of ringing out cleanly.
@@ -202,7 +206,7 @@ void AudioEngine::trigger(float freq) {
     v.inc_target = freq / static_cast<float>(sample_rate_);
     v.inc = v.inc_target * kGlideStart;   // start a few semitones low, glide up
     v.env = 0.0f;
-    v.amp = kVoiceAmp;
+    v.amp = amp;
     v.attacking = true;
     v.active = true;
 }
@@ -214,13 +218,36 @@ void AudioEngine::render(float* out, int32_t num_frames) {
     // and voices restart on top of each other. Spacing the onsets makes it an
     // ASMR trickle that still tracks the sort.
     { float f; while (ring_pop(f)) { pending_freq_ = f; has_pending_ = true; } }
+    // A new celebration? Build a bright ascending arpeggio (root/3rd/5th + the
+    // octave) from the active scale, raised an octave so it stands out.
+    const int creq = celebrate_req_.load(std::memory_order_relaxed);
+    if (creq != celeb_seen_) {
+        celeb_seen_ = creq;
+        int si = scale_idx_.load(std::memory_order_relaxed);
+        if (si < 0) si = 0;
+        if (si > kScaleCount - 1) si = kScaleCount - 1;
+        const Scale& sc = kScales[si];
+        const int degIdx[5] = {0, 2, 4, 0, 2};
+        const int octs[5]   = {0, 0, 0, 1, 1};
+        celeb_len_ = 5;
+        celeb_i_ = 0;
+        for (int j = 0; j < 5; ++j) {
+            const int semis = octs[j] * 12 + sc.degrees[degIdx[j] % sc.count];
+            celeb_buf_[j] = 2.0f * kBaseHz * std::pow(2.0f, static_cast<float>(semis) / 12.0f);
+        }
+    }
     const int min_onset_frames =
         static_cast<int>(kMinOnsetSeconds * static_cast<float>(sample_rate_));
     if (frames_since_onset_ < (1 << 24)) frames_since_onset_ += num_frames;
-    if (has_pending_ && frames_since_onset_ >= min_onset_frames) {
-        trigger(pending_freq_);
-        has_pending_ = false;
-        frames_since_onset_ = 0;
+    if (frames_since_onset_ >= min_onset_frames) {
+        if (celeb_i_ < celeb_len_) {                  // flourish takes priority
+            trigger(celeb_buf_[celeb_i_++], kCelebAmp);
+            frames_since_onset_ = 0;
+        } else if (has_pending_) {
+            trigger(pending_freq_, kVoiceAmp);
+            has_pending_ = false;
+            frames_since_onset_ = 0;
+        }
     }
 
     const float sr_f = static_cast<float>(sample_rate_);

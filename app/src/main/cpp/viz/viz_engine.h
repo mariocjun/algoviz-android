@@ -37,6 +37,7 @@ public:
     void set_sound(bool e);
     void set_volume(float v);
     void set_scale(int i);
+    void celebrate();
 
     void update(float dt_seconds);
     int fill(int* buf, int cap);   // returns ints written, 0 if cap too small

@@ -60,6 +60,11 @@ public:
     static int scale_count();
     static const char* scale_name(int i);
 
+    // Play a short, distinct, brighter arpeggio flourish (the sort-completion
+    // "ta-da"). Safe from any thread; sequenced on the audio thread so the onset
+    // throttle doesn't collapse it.
+    void celebrate() { celebrate_req_.fetch_add(1, std::memory_order_relaxed); }
+
     // Realtime render entry — called only by the AAudio data callback.
     void render(float* out, int32_t num_frames);
 
@@ -74,7 +79,7 @@ private:
         bool  active = false;
     };
 
-    void trigger(float freq);          // audio thread only
+    void trigger(float freq, float amp);   // audio thread only
     bool ring_push(float f);           // producer (GL thread)
     bool ring_pop(float& f);           // consumer (audio thread)
 
@@ -101,6 +106,12 @@ private:
     int frames_since_onset_ = 1 << 20; // large => first note fires immediately
     float pending_freq_ = 0.0f;        // newest queued pitch awaiting its slot
     bool has_pending_ = false;
+
+    std::atomic<int> celebrate_req_{0}; // UI bumps to request a flourish
+    int celeb_seen_ = 0;                // audio-thread: last request handled
+    float celeb_buf_[5] = {};           // arpeggio pitches awaiting release
+    int celeb_len_ = 0;
+    int celeb_i_ = 0;
 };
 
 } // namespace viz

@@ -30,6 +30,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Pause
@@ -135,6 +136,10 @@ private fun VizScreen() {
     var controlsOpen by remember { mutableStateOf(true) }
     var scaleIdx by remember { mutableIntStateOf(0) }
     val scaleNames = remember { runCatching { VizBridge.nativeScaleNames() }.getOrDefault(emptyArray()) }
+    var finishFx by remember { mutableStateOf(true) }   // completion flash + flourish (toggleable)
+    var flash by remember { mutableFloatStateOf(0f) }   // white overlay intensity, decays per frame
+    var prevDone by remember { mutableStateOf(false) }
+    var reStrike by remember { mutableStateOf(false) }
 
     // Push initial UI state into the engine so the two never disagree (the C++
     // engine has its own defaults; the UI is the source of truth on launch).
@@ -162,6 +167,28 @@ private fun VizScreen() {
                     "cmp ${fmt(ints.get(5))}  swap ${fmt(ints.get(6))}  " +
                         "wr ${fmt(ints.get(7))}  steps ${fmt(ints.get(8))}"
                 } else ""
+                // Sort-completion detector (single: finished flag; race: every
+                // lane finished) → lightning flash + a distinct audio flourish.
+                val done = count > 0 && (
+                    (ints.get(0) == 0 && ints.get(4) == 1) ||
+                    (ints.get(0) == 1 && run {
+                        val L = ints.get(1)
+                        var all = L > 0
+                        var k = 0
+                        while (k < L) { if (ints.get(3 + 4 * k) != 1) { all = false; break }; k++ }
+                        all
+                    })
+                )
+                if (done && !prevDone && finishFx) {
+                    flash = 1f; reStrike = true
+                    if (sound) VizBridge.nativeCelebrate()
+                }
+                prevDone = done
+                if (flash > 0f) {
+                    flash *= 0.85f
+                    if (reStrike && flash < 0.25f) { flash = 0.7f; reStrike = false }  // lightning double-strike
+                    if (flash < 0.02f) flash = 0f
+                }
                 frame++
             }
         }
@@ -178,6 +205,7 @@ private fun VizScreen() {
             measurer = measurer,
             drawMode = drawMode,
             frame = frame,
+            flash = flash,
             onDoubleTap = { playing = !playing; VizBridge.nativeTogglePlay() },
             onSpeed = { d -> speed = (speed + d).coerceIn(1, 512); VizBridge.nativeSetSpeed(speed) },
             onPaint = { idx, v01 -> VizBridge.nativePaint(idx, v01) },
@@ -190,7 +218,7 @@ private fun VizScreen() {
             mode = mode, playing = playing, algoIdx = algoIdx, algoNames = algoNames,
             speed = speed, size = size, sound = sound, volume = volume, loop = loop,
             drawMode = drawMode, stats = stats,
-            scaleIdx = scaleIdx, scaleNames = scaleNames,
+            scaleIdx = scaleIdx, scaleNames = scaleNames, finishFx = finishFx,
             onMode = { m -> mode = m; drawMode = false; VizBridge.nativeSetDrawMode(false); VizBridge.nativeSetMode(m) },
             onAlgo = { i -> algoIdx = i; VizBridge.nativeSetAlgorithm(i) },
             onPlay = { playing = !playing; VizBridge.nativeSetPlaying(playing) },
@@ -204,6 +232,7 @@ private fun VizScreen() {
             onVolume = { v -> volume = v; VizBridge.nativeSetVolume(v) },
             onScale = { i -> scaleIdx = i; VizBridge.nativeSetScale(i) },
             onLoop = { b -> loop = b; VizBridge.nativeSetAutoLoop(b) },
+            onFinishFx = { b -> finishFx = b },
             onCollapse = { controlsOpen = false },
         )
     }
@@ -247,6 +276,7 @@ private fun VizCanvas(
     measurer: androidx.compose.ui.text.TextMeasurer,
     drawMode: Boolean,
     frame: Long,
+    flash: Float,
     onDoubleTap: () -> Unit,
     onSpeed: (Int) -> Unit,
     onPaint: (Int, Float) -> Unit,
@@ -272,6 +302,7 @@ private fun VizCanvas(
     ) {
         if (frame < 0L) return@Canvas   // reference `frame` so the draw re-runs each tick
         if (ints.get(0) == 0) drawSingle(ints) else drawRace(ints, algoNames, measurer)
+        if (flash > 0f) drawRect(color = Color.White, size = size, alpha = (flash * 0.85f).coerceIn(0f, 1f))
     }
 }
 
@@ -355,11 +386,12 @@ private fun ControlPanel(
     modifier: Modifier,
     mode: Int, playing: Boolean, algoIdx: Int, algoNames: Array<String>,
     speed: Int, size: Int, sound: Boolean, volume: Float, loop: Boolean,
-    drawMode: Boolean, stats: String, scaleIdx: Int, scaleNames: Array<String>,
+    drawMode: Boolean, stats: String, scaleIdx: Int, scaleNames: Array<String>, finishFx: Boolean,
     onMode: (Int) -> Unit, onAlgo: (Int) -> Unit, onPlay: () -> Unit, onStep: (Int) -> Unit,
     onReset: () -> Unit, onShuffle: () -> Unit, onDraw: () -> Unit,
     onSpeed: (Int) -> Unit, onSize: (Int) -> Unit, onSound: (Boolean) -> Unit,
-    onVolume: (Float) -> Unit, onScale: (Int) -> Unit, onLoop: (Boolean) -> Unit, onCollapse: () -> Unit,
+    onVolume: (Float) -> Unit, onScale: (Int) -> Unit, onLoop: (Boolean) -> Unit,
+    onFinishFx: (Boolean) -> Unit, onCollapse: () -> Unit,
 ) {
     Surface(modifier, tonalElevation = 3.dp) {
         Column(
@@ -375,6 +407,9 @@ private fun ControlPanel(
                 FilterChip(selected = mode == 1, onClick = { onMode(1) }, label = { Text("Race") },
                     modifier = Modifier.semantics { contentDescription = "Race" })
                 Spacer(Modifier.weight(1f))
+                Icon(Icons.Filled.FlashOn, contentDescription = "Finish FX")
+                Switch(checked = finishFx, onCheckedChange = onFinishFx,
+                    modifier = Modifier.semantics { contentDescription = "Finish FX" })
                 Button(onClick = onCollapse) { Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Hide") }
             }
             Row(verticalAlignment = Alignment.CenterVertically,
