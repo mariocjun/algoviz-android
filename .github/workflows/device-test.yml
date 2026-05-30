@@ -46,11 +46,11 @@ jobs:
     runs-on: [self-hosted, n975f]
     timeout-minutes: 20
     env:
-      # Device identity comes from repo variables (Settings > Secrets and
-      # variables > Actions > Variables) — never committed. The harness reads
-      # ROOTED_* from these to recognise the rooted target.
-      DEVICE_SERIAL: ${{ vars.DEVICE_SERIAL }}
-      ROOTED_SERIAL: ${{ vars.DEVICE_SERIAL }}
+      # The device serial is a repo SECRET (masked in the public Actions logs);
+      # the non-unique codename/label are repo variables. Real values never live
+      # in the repo. The harness reads ROOTED_* from these to find the target.
+      DEVICE_SERIAL: ${{ secrets.DEVICE_SERIAL }}
+      ROOTED_SERIAL: ${{ secrets.DEVICE_SERIAL }}
       ROOTED_CODENAME: ${{ vars.DEVICE_CODENAME }}
       ROOTED_LABEL: ${{ vars.DEVICE_LABEL }}
     steps:
