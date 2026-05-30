@@ -10,11 +10,17 @@ MainActivity.kt: btn_run, btn_hwcaps, btn_sensors, btn_cameras, btn_upload,
 field_filter).
 
 Usage:
-    python scripts/ui_tap.py <serial> tap   <by> <value>
+    python scripts/ui_tap.py <serial> tap       <by> <value>
+    python scripts/ui_tap.py <serial> doubletap <by> <value>
+    python scripts/ui_tap.py <serial> longpress <by> <value> [ms]
+    python scripts/ui_tap.py <serial> drag      <by> <value> <dx> <dy> [ms]
+    python scripts/ui_tap.py <serial> swipe     <x1> <y1> <x2> <y2> [ms]
     python scripts/ui_tap.py <serial> find                # list all locatable nodes
     python scripts/ui_tap.py <serial> exists <by> <value> # exit 0 if present
 
   <by> = desc (content-description) | text | id (resource-id)
+  Gestures use `adb shell input` (tap/swipe); drag/longpress are swipes with a
+  duration. swipe takes raw pixels (for the Canvas, which has no locatable node).
 
 Calls adb directly (not via a shell), so /sdcard paths aren't mangled by MSYS.
 """
@@ -113,6 +119,52 @@ def cmd_exists(serial: str, by: str, value: str) -> int:
     return 0 if find(xml, by, value) else 1
 
 
+def _locate(serial: str, by: str, value: str):
+    hit = find(dump_ui(serial), by, value)
+    if not hit:
+        print(f"NOT FOUND: {by}={value!r}", file=sys.stderr)
+    return hit
+
+
+def cmd_swipe(serial: str, x1, y1, x2, y2, ms="300") -> int:
+    adb(serial, "shell", "input", "swipe", str(x1), str(y1), str(x2), str(y2), str(ms))
+    print(f"swipe ({x1},{y1})->({x2},{y2}) {ms}ms")
+    return 0
+
+
+def cmd_doubletap(serial: str, by: str, value: str) -> int:
+    hit = _locate(serial, by, value)
+    if not hit:
+        return 2
+    cx, cy, _ = hit
+    adb(serial, "shell", "input", "tap", str(cx), str(cy))
+    time.sleep(0.08)
+    adb(serial, "shell", "input", "tap", str(cx), str(cy))
+    print(f"double-tap {by}={value!r} at ({cx},{cy})")
+    return 0
+
+
+def cmd_drag(serial: str, by: str, value: str, dx, dy, ms="400") -> int:
+    hit = _locate(serial, by, value)
+    if not hit:
+        return 2
+    cx, cy, _ = hit
+    x2, y2 = cx + int(dx), cy + int(dy)
+    adb(serial, "shell", "input", "swipe", str(cx), str(cy), str(x2), str(y2), str(ms))
+    print(f"drag {by}={value!r} ({cx},{cy})->({x2},{y2}) {ms}ms")
+    return 0
+
+
+def cmd_longpress(serial: str, by: str, value: str, ms="700") -> int:
+    hit = _locate(serial, by, value)
+    if not hit:
+        return 2
+    cx, cy, _ = hit
+    adb(serial, "shell", "input", "swipe", str(cx), str(cy), str(cx), str(cy), str(ms))
+    print(f"long-press {by}={value!r} at ({cx},{cy}) {ms}ms")
+    return 0
+
+
 def main() -> int:
     if len(sys.argv) < 3:
         print(__doc__, file=sys.stderr)
@@ -124,6 +176,14 @@ def main() -> int:
         return cmd_tap(serial, sys.argv[3], sys.argv[4])
     if action == "exists":
         return cmd_exists(serial, sys.argv[3], sys.argv[4])
+    if action == "doubletap":
+        return cmd_doubletap(serial, sys.argv[3], sys.argv[4])
+    if action == "longpress":
+        return cmd_longpress(serial, sys.argv[3], sys.argv[4], *sys.argv[5:6])
+    if action == "drag":
+        return cmd_drag(serial, sys.argv[3], sys.argv[4], sys.argv[5], sys.argv[6], *sys.argv[7:8])
+    if action == "swipe":
+        return cmd_swipe(serial, *sys.argv[3:8])
     print(f"unknown action: {action}", file=sys.stderr)
     return 2
 
