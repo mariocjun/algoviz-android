@@ -26,7 +26,7 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
         with:
-          packages: 'platforms;android-34 build-tools;34.0.0 ndk;26.1.10909125 cmake;3.22.1'
+          packages: 'platforms;android-35 build-tools;35.0.0 ndk;26.1.10909125 cmake;3.22.1'
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
@@ -74,9 +74,10 @@ jobs:
           body: |
             ## Assets
 
-            - **`AlgoViz-${{ github.ref_name }}.apk`** — installable NativeActivity demo.
-              Min SDK: 29 (Android 10+). Signed with the Android debug keystore — installs on
-              any device with "Install from unknown sources" enabled. Not Play-Store eligible.
+            - **`AlgoViz-${{ github.ref_name }}.apk`** — installable sort visualizer +
+              on-device profiler. Min SDK: 29 (Android 10+), targets Android 15 (SDK 35). Signed
+              with the Android debug keystore — installs on any device with "Install from unknown
+              sources" enabled. Not Play-Store eligible (needs a release keystore).
 
             - **`cppbench-${{ github.ref_name }}-arm64-v8a`** — standalone ARM64 ELF binary.
               No APK install needed. Pushes via:

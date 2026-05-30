@@ -329,7 +329,7 @@ class MainActivity : AppCompatActivity() {
             connectTimeout = 15_000
             readTimeout = 15_000
             setRequestProperty("Content-Type", "text/plain; charset=utf-8")
-            setRequestProperty("User-Agent", "algoviz/0.3.3")
+            setRequestProperty("User-Agent", "algoviz/0.4.0")
         }
         try {
             conn.outputStream.use { os: OutputStream -> os.write(body.toByteArray(Charsets.UTF_8)) }
