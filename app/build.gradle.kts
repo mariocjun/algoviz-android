@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     kotlin("android") version "1.9.24"
@@ -42,6 +44,22 @@ android {
         }
     }
 
+    // Release signing reads from an untracked keystore.properties (gitignored)
+    // so the keystore path + passwords never enter version control. Without it
+    // (CI, fresh clones) the release build falls back to debug signing below.
+    val keystoreProps = rootProject.file("keystore.properties")
+    signingConfigs {
+        if (keystoreProps.exists()) {
+            create("release") {
+                val props = Properties().apply { keystoreProps.inputStream().use { load(it) } }
+                storeFile = rootProject.file(props.getProperty("storeFile"))
+                storePassword = props.getProperty("storePassword")
+                keyAlias = props.getProperty("keyAlias")
+                keyPassword = props.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -49,7 +67,8 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (keystoreProps.exists())
+                signingConfigs.getByName("release") else signingConfigs.getByName("debug")
         }
     }
 

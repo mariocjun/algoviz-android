@@ -22,6 +22,7 @@ gradlew.bat
 *.aab
 *.keystore
 *.jks
+keystore.properties
 
 # Benchmark run outputs (device-harness.sh / run-bench.sh) — transient,
 # device-specific. Keep them out of git; analysed + reported, not source.
