@@ -36,6 +36,9 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -81,6 +84,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        WindowCompat.setDecorFitsSystemWindows(window, false)   // edge-to-edge (targetSdk 35)
         nativeSetCrashDir(filesDir.absolutePath)
         setContentView(buildUi())
         loadUrlHistory()
@@ -95,6 +99,14 @@ class MainActivity : AppCompatActivity() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(padPx, padPx, padPx, padPx)
+        }
+        // Edge-to-edge is enforced at targetSdk 35: pad the root by the
+        // system-bar + cutout insets so nothing draws under the status/nav bars.
+        ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
+            val bars = insets.getInsets(
+                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+            v.setPadding(padPx + bars.left, padPx + bars.top, padPx + bars.right, padPx + bars.bottom)
+            insets
         }
 
         // Row 0: persistent URL history (sticky at top, survives Run taps)

@@ -7,7 +7,7 @@ plugins {
 
 android {
     namespace = "com.mariocjun.algoviz"
-    compileSdk = 34
+    compileSdk = 35
     ndkVersion = "26.1.10909125"
 
     defaultConfig {
@@ -19,7 +19,7 @@ android {
         // All target devices (Note10+ Exynos/Snapdragon, S24 Ultra, any
         // 2020+ flagship) are >= API 29, so this is no practical loss.
         minSdk = 29
-        targetSdk = 34
+        targetSdk = 35
         versionCode = 4
         versionName = "0.3.3"
 

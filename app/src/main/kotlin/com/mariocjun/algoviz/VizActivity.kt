@@ -8,6 +8,7 @@ import android.content.res.Configuration
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -23,6 +24,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
@@ -94,10 +96,15 @@ private fun fmt(n: Int): String = when {
 class VizActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
         VizBridge.nativeInit()
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
-                Surface(color = MaterialTheme.colorScheme.background) { VizScreen() }
+                // Background bleeds edge-to-edge; the content is inset by the
+                // system bars (status/navigation) so no control sits under them.
+                Surface(color = MaterialTheme.colorScheme.background) {
+                    Box(Modifier.safeDrawingPadding()) { VizScreen() }
+                }
             }
         }
     }
