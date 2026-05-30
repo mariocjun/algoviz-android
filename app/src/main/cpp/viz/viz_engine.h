@@ -36,6 +36,7 @@ public:
     void set_draw_mode(bool d) { single_.set_draw_mode(d); }
     void paint(int idx, float v01) { single_.paint(idx, v01); }
     void set_auto_loop(bool b) { single_.set_auto_loop(b); race_.set_auto_loop(b); }
+    void set_loop_random(bool b) { single_.set_loop_random(b); race_.set_loop_random(b); }
     void set_sound(bool e);
     void set_volume(float v);
     void set_scale(int i);

@@ -30,6 +30,7 @@ public:
     void set_speed(int s);
     void set_slow_period_ms(int ms);   // 0 = off (use speed); else 1 step / ms
     void set_auto_loop(bool b) { auto_loop_ = b; }
+    void set_loop_random(bool b) { loop_random_ = b; }   // loop: reshuffle vs replay same
     void set_playing(bool p) { playing_ = p; }
     void toggle_play() { playing_ = !playing_; }
     void reset();                   // reshuffle (same size/algo)
@@ -81,6 +82,7 @@ private:
     bool playing_ = true;
     bool finished_ = false;
     bool auto_loop_ = true;
+    bool loop_random_ = false;   // false = replay the same shuffle each loop
     bool draw_mode_ = false;
     float finished_timer_ = 0.0f;
     std::uint64_t seed_ = 0xC0FFEEULL;

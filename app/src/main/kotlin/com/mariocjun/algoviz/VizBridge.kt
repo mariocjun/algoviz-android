@@ -26,6 +26,7 @@ object VizBridge {
     external fun nativeSetDrawMode(d: Boolean)
     external fun nativePaint(idx: Int, v01: Float)
     external fun nativeSetAutoLoop(b: Boolean)
+    external fun nativeSetLoopRandom(b: Boolean)
     external fun nativeSetSound(e: Boolean)
     external fun nativeSetVolume(v: Float)
     external fun nativeSetScale(i: Int)

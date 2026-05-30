@@ -175,6 +175,7 @@ private fun VizScreen() {
     var sound by remember { mutableStateOf(true) }
     var volume by remember { mutableFloatStateOf(0.6f) }
     var loop by remember { mutableStateOf(true) }
+    var loopRandom by remember { mutableStateOf(false) }   // reshuffle each loop (off = replay same)
     var drawMode by remember { mutableStateOf(false) }
     var controlsOpen by remember { mutableStateOf(true) }
     var scaleIdx by remember { mutableIntStateOf(0) }
@@ -204,6 +205,7 @@ private fun VizScreen() {
         VizBridge.nativeSetSound(sound)
         VizBridge.nativeSetVolume(volume)
         VizBridge.nativeSetAutoLoop(loop)
+        VizBridge.nativeSetLoopRandom(loopRandom)
         VizBridge.nativeSetPlaying(playing)
     }
 
@@ -276,7 +278,7 @@ private fun VizScreen() {
         ControlPanel(
             modifier = mod,
             mode = mode, playing = playing, algoIdx = algoIdx, algoNames = algoNames,
-            speed = speed, size = size, sound = sound, volume = volume, loop = loop,
+            speed = speed, size = size, sound = sound, volume = volume, loop = loop, loopRandom = loopRandom,
             drawMode = drawMode, stats = stats,
             scaleIdx = scaleIdx, scaleNames = scaleNames, finishFx = finishFx, slowIdx = slowIdx, raceMode = raceMode,
             degreeColor = degreeColor, moodColor = moodColor,
@@ -297,6 +299,7 @@ private fun VizScreen() {
             onDegreeColor = { b -> degreeColor = b },
             onMoodColor = { b -> moodColor = b },
             onLoop = { b -> loop = b; VizBridge.nativeSetAutoLoop(b) },
+            onLoopRandom = { b -> loopRandom = b; VizBridge.nativeSetLoopRandom(b) },
             onFinishFx = { b -> finishFx = b },
             onCollapse = { controlsOpen = false },
         )
@@ -499,13 +502,13 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawRace(
 private fun ControlPanel(
     modifier: Modifier,
     mode: Int, playing: Boolean, algoIdx: Int, algoNames: Array<String>,
-    speed: Int, size: Int, sound: Boolean, volume: Float, loop: Boolean,
+    speed: Int, size: Int, sound: Boolean, volume: Float, loop: Boolean, loopRandom: Boolean,
     drawMode: Boolean, stats: String, scaleIdx: Int, scaleNames: Array<String>, finishFx: Boolean,
     slowIdx: Int, raceMode: Int, degreeColor: Boolean, moodColor: Boolean,
     onMode: (Int) -> Unit, onAlgo: (Int) -> Unit, onPlay: () -> Unit, onStep: (Int) -> Unit,
     onReset: () -> Unit, onShuffle: () -> Unit, onDraw: () -> Unit,
     onSpeed: (Int) -> Unit, onSize: (Int) -> Unit, onSound: (Boolean) -> Unit,
-    onVolume: (Float) -> Unit, onScale: (Int) -> Unit, onLoop: (Boolean) -> Unit,
+    onVolume: (Float) -> Unit, onScale: (Int) -> Unit, onLoop: (Boolean) -> Unit, onLoopRandom: (Boolean) -> Unit,
     onFinishFx: (Boolean) -> Unit, onSlow: (Int) -> Unit, onRaceMode: (Int) -> Unit,
     onDegreeColor: (Boolean) -> Unit, onMoodColor: (Boolean) -> Unit, onCollapse: () -> Unit,
 ) {
@@ -532,6 +535,11 @@ private fun ControlPanel(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Sound"); Switch(checked = sound, onCheckedChange = onSound)
                 Text("Loop"); Switch(checked = loop, onCheckedChange = onLoop)
+                Text("Rnd"); Switch(checked = loopRandom, onCheckedChange = onLoopRandom,
+                    modifier = Modifier.semantics { contentDescription = "Random loop" })
+            }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Vol")
                 Slider(value = volume, onValueChange = onVolume, modifier = Modifier.weight(1f))
             }

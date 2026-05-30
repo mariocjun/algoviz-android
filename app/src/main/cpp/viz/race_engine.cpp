@@ -122,7 +122,9 @@ void RaceEngine::update(float dt_seconds) {
     }
     if (finished_count_ >= static_cast<int>(lanes_.size()) && auto_loop_) {
         finished_timer_ += dt_seconds;
-        if (finished_timer_ >= kAutoLoopDelay) shuffle();
+        if (finished_timer_ >= kAutoLoopDelay) {
+            if (loop_random_) shuffle(); else reset();   // replay same ordering unless random
+        }
     }
 }
 

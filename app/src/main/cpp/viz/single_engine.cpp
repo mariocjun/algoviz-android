@@ -193,7 +193,9 @@ void SingleEngine::update(float dt_seconds) {
     }
     if (finished_ && auto_loop_) {
         finished_timer_ += dt_seconds;
-        if (finished_timer_ >= kAutoLoopDelay) shuffle();
+        if (finished_timer_ >= kAutoLoopDelay) {
+            if (loop_random_) shuffle(); else reset();   // replay same ordering unless random
+        }
     }
 }
 

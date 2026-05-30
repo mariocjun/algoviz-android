@@ -82,6 +82,10 @@ Java_com_mariocjun_algoviz_VizBridge_nativeSetAutoLoop(JNIEnv* /*env*/, jobject 
     engine()->set_auto_loop(b != JNI_FALSE);
 }
 JNIEXPORT void JNICALL
+Java_com_mariocjun_algoviz_VizBridge_nativeSetLoopRandom(JNIEnv* /*env*/, jobject /*thiz*/, jboolean b) {
+    engine()->set_loop_random(b != JNI_FALSE);
+}
+JNIEXPORT void JNICALL
 Java_com_mariocjun_algoviz_VizBridge_nativeSetSound(JNIEnv* /*env*/, jobject /*thiz*/, jboolean e) {
     engine()->set_sound(e != JNI_FALSE);
 }
