@@ -28,6 +28,15 @@ import time
 REMOTE_DUMP = "/sdcard/_uidump.xml"
 ATTR = {"desc": "content-desc", "text": "text", "id": "resource-id"}
 
+# Windows consoles default to cp1252, which raises UnicodeEncodeError when
+# printing UI text that contains non-Latin-1 glyphs (e.g. icon code points).
+# Force UTF-8 so `find`/`tap` diagnostics never crash on Windows.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
+
 
 def adb(serial: str, *args: str) -> subprocess.CompletedProcess:
     return subprocess.run(["adb", "-s", serial, *args],
