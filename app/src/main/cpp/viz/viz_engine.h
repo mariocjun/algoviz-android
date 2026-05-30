@@ -26,6 +26,7 @@ public:
     void set_algorithm(int i) { single_.set_algorithm(i); }
     void set_size(int n) { if (mode_ == 0) single_.set_size(n); else race_.set_size(n); }
     void set_speed(int s) { if (mode_ == 0) single_.set_speed(s); else race_.set_speed(s); }
+    void set_slow(int ms) { single_.set_slow_period_ms(ms); }   // slow mode (single)
     void set_playing(bool p) { if (mode_ == 0) single_.set_playing(p); else race_.set_playing(p); }
     void toggle_play() { if (mode_ == 0) single_.toggle_play(); else race_.toggle_play(); }
     void reset() { if (mode_ == 0) single_.reset(); else race_.reset(); }

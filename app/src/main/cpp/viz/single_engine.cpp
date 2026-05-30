@@ -30,6 +30,7 @@ void SingleEngine::rebuild_generator() {
     compares_ = swaps_ = writes_ = steps_ = 0;
     undo_.clear();
     redo_.clear();
+    slow_accum_ = 0.0f;
 }
 
 void SingleEngine::reset() {
@@ -56,6 +57,11 @@ void SingleEngine::set_size(int n) {
 }
 
 void SingleEngine::set_speed(int s) { speed_ = clamp_int(s, 1, 512); }
+
+void SingleEngine::set_slow_period_ms(int ms) {
+    slow_period_ = ms <= 0 ? 0.0f : static_cast<float>(ms) / 1000.0f;
+    slow_accum_ = 0.0f;
+}
 
 void SingleEngine::set_draw_mode(bool d) {
     draw_mode_ = d;
@@ -169,10 +175,21 @@ void SingleEngine::step_back_one() {
 void SingleEngine::update(float dt_seconds) {
     if (draw_mode_) return;
     if (playing_ && !finished_) {
-        for (int s = 0; s < speed_; ++s) {
-            if (!step_forward()) break;
+        if (slow_period_ > 0.0f) {              // slow mode: 1 step per period
+            slow_accum_ += dt_seconds;
+            bool stepped = false;
+            while (slow_accum_ >= slow_period_) {
+                slow_accum_ -= slow_period_;
+                if (!step_forward()) break;
+                stepped = true;
+            }
+            if (stepped) flag_note();
+        } else {
+            for (int s = 0; s < speed_; ++s) {
+                if (!step_forward()) break;
+            }
+            flag_note();
         }
-        flag_note();
     }
     if (finished_ && auto_loop_) {
         finished_timer_ += dt_seconds;

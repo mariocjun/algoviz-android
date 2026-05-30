@@ -28,6 +28,7 @@ public:
     void set_algorithm(int idx);    // clamps + reshuffles
     void set_size(int n);           // clamps + reshuffles
     void set_speed(int s);
+    void set_slow_period_ms(int ms);   // 0 = off (use speed); else 1 step / ms
     void set_auto_loop(bool b) { auto_loop_ = b; }
     void set_playing(bool p) { playing_ = p; }
     void toggle_play() { playing_ = !playing_; }
@@ -75,6 +76,8 @@ private:
     int algo_idx_ = 3;
     int size_ = 96;
     int speed_ = 8;
+    float slow_period_ = 0.0f;   // seconds between single steps (0 = off / use speed_)
+    float slow_accum_ = 0.0f;    // time accumulator for slow mode
     bool playing_ = true;
     bool finished_ = false;
     bool auto_loop_ = true;

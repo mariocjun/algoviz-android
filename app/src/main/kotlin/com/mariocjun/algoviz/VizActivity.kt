@@ -95,6 +95,11 @@ private fun fmt(n: Int): String = when {
     else           -> n.toString()
 }
 
+// Slow-motion rates, offered only for <=32 bars. ms = milliseconds per single
+// step (0 = off, use the normal speed). Slowest = one operation every 2 s.
+private val SLOW_LABELS = arrayOf("Off", "1/2s", "1/s", "2/s", "4/s")
+private val SLOW_MS = intArrayOf(0, 2000, 1000, 500, 250)
+
 class VizActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -142,6 +147,7 @@ private fun VizScreen() {
     var prevDone by remember { mutableStateOf(false) }
     var reStrike by remember { mutableStateOf(false) }
     var rewinding by remember { mutableStateOf(false) }   // VHS rewind (long-press + drag left)
+    var slowIdx by remember { mutableIntStateOf(0) }      // slow-motion rate (0 = off; <=32 bars only)
 
     // Push initial UI state into the engine so the two never disagree (the C++
     // engine has its own defaults; the UI is the source of truth on launch).
@@ -151,6 +157,7 @@ private fun VizScreen() {
         VizBridge.nativeSetSpeed(speed)
         VizBridge.nativeSetSize(size)
         VizBridge.nativeSetScale(scaleIdx)
+        VizBridge.nativeSetSlow(SLOW_MS[slowIdx])
         VizBridge.nativeSetSound(sound)
         VizBridge.nativeSetVolume(volume)
         VizBridge.nativeSetAutoLoop(loop)
@@ -224,7 +231,7 @@ private fun VizScreen() {
             mode = mode, playing = playing, algoIdx = algoIdx, algoNames = algoNames,
             speed = speed, size = size, sound = sound, volume = volume, loop = loop,
             drawMode = drawMode, stats = stats,
-            scaleIdx = scaleIdx, scaleNames = scaleNames, finishFx = finishFx,
+            scaleIdx = scaleIdx, scaleNames = scaleNames, finishFx = finishFx, slowIdx = slowIdx,
             onMode = { m -> mode = m; drawMode = false; VizBridge.nativeSetDrawMode(false); VizBridge.nativeSetMode(m) },
             onAlgo = { i -> algoIdx = i; VizBridge.nativeSetAlgorithm(i) },
             onPlay = { playing = !playing; VizBridge.nativeSetPlaying(playing) },
@@ -233,10 +240,11 @@ private fun VizScreen() {
             onShuffle = { VizBridge.nativeShuffle() },
             onDraw = { drawMode = !drawMode; if (drawMode) playing = false; VizBridge.nativeSetDrawMode(drawMode) },
             onSpeed = { s -> speed = s; VizBridge.nativeSetSpeed(s) },
-            onSize = { s -> size = s; VizBridge.nativeSetSize(s) },
+            onSize = { s -> size = s; VizBridge.nativeSetSize(s); if (s > 32 && slowIdx != 0) { slowIdx = 0; VizBridge.nativeSetSlow(0) } },
             onSound = { e -> sound = e; VizBridge.nativeSetSound(e) },
             onVolume = { v -> volume = v; VizBridge.nativeSetVolume(v) },
             onScale = { i -> scaleIdx = i; VizBridge.nativeSetScale(i) },
+            onSlow = { i -> slowIdx = i; VizBridge.nativeSetSlow(SLOW_MS[i]) },
             onLoop = { b -> loop = b; VizBridge.nativeSetAutoLoop(b) },
             onFinishFx = { b -> finishFx = b },
             onCollapse = { controlsOpen = false },
@@ -440,11 +448,12 @@ private fun ControlPanel(
     mode: Int, playing: Boolean, algoIdx: Int, algoNames: Array<String>,
     speed: Int, size: Int, sound: Boolean, volume: Float, loop: Boolean,
     drawMode: Boolean, stats: String, scaleIdx: Int, scaleNames: Array<String>, finishFx: Boolean,
+    slowIdx: Int,
     onMode: (Int) -> Unit, onAlgo: (Int) -> Unit, onPlay: () -> Unit, onStep: (Int) -> Unit,
     onReset: () -> Unit, onShuffle: () -> Unit, onDraw: () -> Unit,
     onSpeed: (Int) -> Unit, onSize: (Int) -> Unit, onSound: (Boolean) -> Unit,
     onVolume: (Float) -> Unit, onScale: (Int) -> Unit, onLoop: (Boolean) -> Unit,
-    onFinishFx: (Boolean) -> Unit, onCollapse: () -> Unit,
+    onFinishFx: (Boolean) -> Unit, onSlow: (Int) -> Unit, onCollapse: () -> Unit,
 ) {
     Surface(modifier, tonalElevation = 3.dp) {
         Column(
@@ -530,6 +539,17 @@ private fun ControlPanel(
             }
             StepperRow("Speed", speed, 1, 512, 1, onSpeed)
             StepperRow("Size", size, 16, 400, 8, onSize)
+            if (size <= 32) {     // slow-motion only makes sense for a few bars
+                Text("Slow (≤32 bars)", fontSize = 12.sp)
+                Row(Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    SLOW_LABELS.forEachIndexed { i, lab ->
+                        FilterChip(selected = i == slowIdx, onClick = { onSlow(i) },
+                            label = { Text(lab) },
+                            modifier = Modifier.semantics { contentDescription = "slow $lab" })
+                    }
+                }
+            }
             Text(stats, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
     }

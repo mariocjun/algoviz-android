@@ -102,6 +102,10 @@ Java_com_mariocjun_algoviz_VizBridge_nativePlayNote(JNIEnv* /*env*/, jobject /*t
     engine()->play_note(v01);
 }
 JNIEXPORT void JNICALL
+Java_com_mariocjun_algoviz_VizBridge_nativeSetSlow(JNIEnv* /*env*/, jobject /*thiz*/, jint ms) {
+    engine()->set_slow(ms);
+}
+JNIEXPORT void JNICALL
 Java_com_mariocjun_algoviz_VizBridge_nativeUpdate(JNIEnv* /*env*/, jobject /*thiz*/, jfloat dt) {
     engine()->update(dt);
 }

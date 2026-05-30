@@ -31,6 +31,7 @@ object VizBridge {
     external fun nativeSetScale(i: Int)
     external fun nativeCelebrate()
     external fun nativePlayNote(v01: Float)
+    external fun nativeSetSlow(ms: Int)
     external fun nativeUpdate(dt: Float)
     external fun nativeFill(buffer: ByteBuffer): Int
     external fun nativeAudioResume()
