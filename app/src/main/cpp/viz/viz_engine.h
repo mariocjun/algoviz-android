@@ -38,6 +38,7 @@ public:
     void set_volume(float v);
     void set_scale(int i);
     void celebrate();
+    void play_note(float v01);   // play a single note for a tapped bar's value
 
     void update(float dt_seconds);
     int fill(int* buf, int cap);   // returns ints written, 0 if cap too small

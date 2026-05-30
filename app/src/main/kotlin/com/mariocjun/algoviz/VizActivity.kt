@@ -209,6 +209,7 @@ private fun VizScreen() {
             onDoubleTap = { playing = !playing; VizBridge.nativeTogglePlay() },
             onSpeed = { d -> speed = (speed + d).coerceIn(1, 512); VizBridge.nativeSetSpeed(speed) },
             onPaint = { idx, v01 -> VizBridge.nativePaint(idx, v01) },
+            onPlayNote = { v01 -> VizBridge.nativePlayNote(v01) },
         )
     }
 
@@ -280,10 +281,24 @@ private fun VizCanvas(
     onDoubleTap: () -> Unit,
     onSpeed: (Int) -> Unit,
     onPaint: (Int, Float) -> Unit,
+    onPlayNote: (Float) -> Unit,
 ) {
     Canvas(
         modifier
-            .pointerInput(Unit) { detectTapGestures(onDoubleTap = { onDoubleTap() }) }
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onDoubleTap = { onDoubleTap() },
+                    onTap = { pos ->            // tap a bar to play its note (single mode)
+                        if (ints.get(0) == 0) {
+                            val n = ints.get(1)
+                            if (n > 0) {
+                                val idx = (pos.x / size.width.toFloat() * n).toInt().coerceIn(0, n - 1)
+                                onPlayNote(ints.get(10 + idx).toFloat() / n)
+                            }
+                        }
+                    },
+                )
+            }
             .pointerInput(drawMode) {
                 detectDragGestures { change, drag ->
                     change.consume()
@@ -410,7 +425,7 @@ private fun ControlPanel(
                 Icon(Icons.Filled.FlashOn, contentDescription = "Finish FX")
                 Switch(checked = finishFx, onCheckedChange = onFinishFx,
                     modifier = Modifier.semantics { contentDescription = "Finish FX" })
-                Button(onClick = onCollapse) { Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Hide") }
+                Button(onClick = onCollapse, modifier = Modifier.semantics { contentDescription = "Hide" }) { Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null) }
             }
             Row(verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -441,40 +456,37 @@ private fun ControlPanel(
                     }
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Button(onClick = onPlay, modifier = Modifier.weight(1f)) {
-                        Icon(if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                            contentDescription = if (playing) "Pause" else "Play")
+                    Button(onClick = onPlay, modifier = Modifier.weight(1f).semantics { contentDescription = if (playing) "Pause" else "Play" }) {
+                        Icon(if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow, contentDescription = null)
                     }
-                    Button(onClick = { onStep(-1) }, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Filled.SkipPrevious, contentDescription = "Step back")
+                    Button(onClick = { onStep(-1) }, modifier = Modifier.weight(1f).semantics { contentDescription = "Step back" }) {
+                        Icon(Icons.Filled.SkipPrevious, contentDescription = null)
                     }
-                    Button(onClick = { onStep(1) }, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Filled.SkipNext, contentDescription = "Step forward")
+                    Button(onClick = { onStep(1) }, modifier = Modifier.weight(1f).semantics { contentDescription = "Step forward" }) {
+                        Icon(Icons.Filled.SkipNext, contentDescription = null)
                     }
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Button(onClick = onReset, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Filled.Refresh, contentDescription = "Reset")
+                    Button(onClick = onReset, modifier = Modifier.weight(1f).semantics { contentDescription = "Reset" }) {
+                        Icon(Icons.Filled.Refresh, contentDescription = null)
                     }
-                    Button(onClick = onShuffle, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Filled.Shuffle, contentDescription = "Shuffle")
+                    Button(onClick = onShuffle, modifier = Modifier.weight(1f).semantics { contentDescription = "Shuffle" }) {
+                        Icon(Icons.Filled.Shuffle, contentDescription = null)
                     }
-                    FilledTonalButton(onClick = onDraw, modifier = Modifier.weight(1f)) {
-                        Icon(if (drawMode) Icons.Filled.Sort else Icons.Filled.Edit,
-                            contentDescription = if (drawMode) "Sort" else "Draw")
+                    FilledTonalButton(onClick = onDraw, modifier = Modifier.weight(1f).semantics { contentDescription = if (drawMode) "Sort" else "Draw" }) {
+                        Icon(if (drawMode) Icons.Filled.Sort else Icons.Filled.Edit, contentDescription = null)
                     }
                 }
             } else {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Button(onClick = onPlay, modifier = Modifier.weight(1f)) {
-                        Icon(if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                            contentDescription = if (playing) "Pause" else "Play")
+                    Button(onClick = onPlay, modifier = Modifier.weight(1f).semantics { contentDescription = if (playing) "Pause" else "Play" }) {
+                        Icon(if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow, contentDescription = null)
                     }
-                    Button(onClick = onReset, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Filled.Refresh, contentDescription = "Reset")
+                    Button(onClick = onReset, modifier = Modifier.weight(1f).semantics { contentDescription = "Reset" }) {
+                        Icon(Icons.Filled.Refresh, contentDescription = null)
                     }
-                    Button(onClick = onShuffle, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Filled.Shuffle, contentDescription = "Shuffle")
+                    Button(onClick = onShuffle, modifier = Modifier.weight(1f).semantics { contentDescription = "Shuffle" }) {
+                        Icon(Icons.Filled.Shuffle, contentDescription = null)
                     }
                 }
             }
@@ -489,8 +501,9 @@ private fun ControlPanel(
 private fun StepperRow(label: String, value: Int, lo: Int, hi: Int, step: Int, onChange: (Int) -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text("$label $value", fontSize = 12.sp, maxLines = 1, modifier = Modifier.width(86.dp))
-        Button(onClick = { onChange((value - step).coerceAtLeast(lo)) }) {
-            Icon(Icons.Filled.Remove, contentDescription = "decrease $label")
+        Button(onClick = { onChange((value - step).coerceAtLeast(lo)) },
+            modifier = Modifier.semantics { contentDescription = "decrease $label" }) {
+            Icon(Icons.Filled.Remove, contentDescription = null)
         }
         Slider(
             value = value.toFloat(),
@@ -498,8 +511,9 @@ private fun StepperRow(label: String, value: Int, lo: Int, hi: Int, step: Int, o
             valueRange = lo.toFloat()..hi.toFloat(),
             modifier = Modifier.weight(1f),
         )
-        Button(onClick = { onChange((value + step).coerceAtMost(hi)) }) {
-            Icon(Icons.Filled.Add, contentDescription = "increase $label")
+        Button(onClick = { onChange((value + step).coerceAtMost(hi)) },
+            modifier = Modifier.semantics { contentDescription = "increase $label" }) {
+            Icon(Icons.Filled.Add, contentDescription = null)
         }
     }
 }
