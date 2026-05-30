@@ -10,7 +10,7 @@
 //   2. Pure-ish sine voices (fundamental + soft harmonics) with a short attack
 //      and exponential decay — rounded, click-free, bell/marimba-like.
 //   3. Polyphony cap + tanh soft-limiter — dense passages stay smooth, never
-//      clip into harshness.
+//      clip into harshness; a Freeverb-style stereo reverb adds space/depth.
 //   4. Onset throttle + quietest-voice stealing — onsets are spaced (~11/s max)
 //      and a new note never chops a still-prominent one, so rapid sorting reads
 //      as a separated trickle rather than a fused buzz.
@@ -23,6 +23,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <vector>
 
 // <aaudio/AAudio.h> declares AAudioStream as `typedef struct AAudioStreamStruct
 // AAudioStream;`, so forward-declaring it as `struct AAudioStream;` is a
@@ -79,6 +80,24 @@ private:
         bool  attacking = false;
         bool  active = false;
     };
+
+    // Master reverb (Freeverb-style: parallel comb + series allpass filters,
+    // stereo) — gives the dry sine voices a lush, spacious, high-quality tail.
+    struct Reverb {
+        struct Comb { std::vector<float> buf; int pos = 0; float store = 0.0f; };
+        struct Allpass { std::vector<float> buf; int pos = 0; };
+        static constexpr int kCombs = 4;
+        static constexpr int kAllpass = 2;
+        Comb comb[2][kCombs];     // [channel][n]
+        Allpass ap[2][kAllpass];
+        float feedback = 0.84f;   // room size
+        float damp1 = 0.20f;      // high-frequency damping
+        float apfb = 0.5f;
+        bool ready = false;
+        void init(int sample_rate);
+        void process(float in, float& out_l, float& out_r);   // mono in -> stereo wet
+    };
+    Reverb reverb_;
 
     void trigger(float freq, float amp);   // audio thread only
     bool ring_push(float f);           // producer (GL thread)

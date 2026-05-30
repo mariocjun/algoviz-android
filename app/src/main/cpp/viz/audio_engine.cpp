@@ -93,6 +93,54 @@ aaudio_data_callback_result_t data_callback(AAudioStream* stream, void* user,
 
 } // namespace
 
+void AudioEngine::Reverb::init(int sr) {
+    const float s = static_cast<float>(sr) / 44100.0f;   // Freeverb tunings are @44.1k
+    const int comb_t[kCombs] = {1116, 1188, 1277, 1356};
+    const int ap_t[kAllpass] = {556, 441};
+    const int spread = 23;                               // stereo width (R channel offset)
+    for (int i = 0; i < kCombs; ++i) {
+        comb[0][i].buf.assign(static_cast<std::size_t>(static_cast<float>(comb_t[i]) * s), 0.0f);
+        comb[0][i].pos = 0; comb[0][i].store = 0.0f;
+        comb[1][i].buf.assign(static_cast<std::size_t>(static_cast<float>(comb_t[i] + spread) * s), 0.0f);
+        comb[1][i].pos = 0; comb[1][i].store = 0.0f;
+    }
+    for (int i = 0; i < kAllpass; ++i) {
+        ap[0][i].buf.assign(static_cast<std::size_t>(static_cast<float>(ap_t[i]) * s), 0.0f);
+        ap[0][i].pos = 0;
+        ap[1][i].buf.assign(static_cast<std::size_t>(static_cast<float>(ap_t[i] + spread) * s), 0.0f);
+        ap[1][i].pos = 0;
+    }
+    ready = true;
+}
+
+void AudioEngine::Reverb::process(float in, float& out_l, float& out_r) {
+    if (!ready) { out_l = 0.0f; out_r = 0.0f; return; }
+    const float damp2 = 1.0f - damp1;
+    float out[2] = {0.0f, 0.0f};
+    for (int chl = 0; chl < 2; ++chl) {
+        float acc = 0.0f;
+        for (int i = 0; i < kCombs; ++i) {            // parallel comb filters
+            Comb& c = comb[chl][i];
+            const float y = c.buf[static_cast<std::size_t>(c.pos)];
+            c.store = y * damp2 + c.store * damp1;
+            c.buf[static_cast<std::size_t>(c.pos)] = in + c.store * feedback;
+            if (++c.pos >= static_cast<int>(c.buf.size())) c.pos = 0;
+            acc += y;
+        }
+        for (int i = 0; i < kAllpass; ++i) {          // series allpass diffusers
+            Allpass& a = ap[chl][i];
+            const float bufout = a.buf[static_cast<std::size_t>(a.pos)];
+            const float y = bufout - acc;
+            a.buf[static_cast<std::size_t>(a.pos)] = acc + bufout * apfb;
+            if (++a.pos >= static_cast<int>(a.buf.size())) a.pos = 0;
+            acc = y;
+        }
+        out[chl] = acc;
+    }
+    out_l = out[0];
+    out_r = out[1];
+}
+
 AudioEngine::~AudioEngine() { stop(); }
 
 void AudioEngine::set_volume(float v) {
@@ -134,6 +182,8 @@ bool AudioEngine::start() {
     // low-latency default — underruns (xruns) are what crackle/"chiado".
     const int32_t burst = AAudioStream_getFramesPerBurst(stream_);
     if (burst > 0) AAudioStream_setBufferSizeInFrames(stream_, burst * 4);
+
+    reverb_.init(sample_rate_);   // build the reverb delay lines for this rate
 
     r = AAudioStream_requestStart(stream_);
     if (r != AAUDIO_OK) {
@@ -275,10 +325,11 @@ void AudioEngine::render(float* out, int32_t num_frames) {
         float mix = 0.0f;
         for (Voice& v : voices_) {
             if (!v.active) continue;
-            // fundamental + a touch of 2nd harmonic for body (less thin / low-quality)
-            const float s1 = std::sin(2.0f * kPi * v.phase);
-            const float s2 = std::sin(4.0f * kPi * v.phase);
-            mix += (s1 + 0.16f * s2) * v.env * v.amp;
+            // fundamental + soft harmonics for warmth/body (not a thin pure sine)
+            const float ph = 2.0f * kPi * v.phase;
+            const float tone = std::sin(ph) + 0.18f * std::sin(2.0f * ph)
+                             + 0.07f * std::sin(3.0f * ph);
+            mix += tone * v.env * v.amp;
 
             v.inc += (v.inc_target - v.inc) * glide_coef;            // rising "bloop"
             v.phase += v.inc;
@@ -294,8 +345,18 @@ void AudioEngine::render(float* out, int32_t num_frames) {
         }
         const float sat = std::tanh(mix * 0.7f);          // gentler soft-limit (less rasp)
         lp_state_ += (sat - lp_state_) * lp_coef;          // one-pole low-pass
-        const float sample = lp_state_ * gain;
-        for (int c = 0; c < ch; ++c) out[frame * ch + c] = sample;
+        const float dry = lp_state_;
+        float wet_l, wet_r;
+        reverb_.process(dry, wet_l, wet_r);                // lush stereo tail
+        const float l = (dry * 0.72f + wet_l * 0.32f) * gain;
+        const float r = (dry * 0.72f + wet_r * 0.32f) * gain;
+        if (ch >= 2) {
+            out[frame * ch + 0] = l;
+            out[frame * ch + 1] = r;
+            for (int c = 2; c < ch; ++c) out[frame * ch + c] = (l + r) * 0.5f;
+        } else {
+            out[frame] = (l + r) * 0.5f;
+        }
     }
 }
 
