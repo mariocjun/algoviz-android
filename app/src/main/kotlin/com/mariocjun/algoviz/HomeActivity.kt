@@ -23,6 +23,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Sort
+import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.Card
@@ -61,6 +62,12 @@ private val TILES = listOf(
         subtitle = "CPU/task scheduler — Maziero reference",
         icon = Icons.Filled.Schedule,
         target = SchedActivity::class.java,
+    ),
+    Tile(
+        title = "Racha",
+        subtitle = "divide a conta, simplifica as dívidas",
+        icon = Icons.Filled.Groups,
+        target = SplitwiseActivity::class.java,
     ),
     Tile(
         title = "Profiler",

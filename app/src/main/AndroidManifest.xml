@@ -44,5 +44,11 @@
             android:name=".SchedActivity"
             android:exported="false"
             android:configChanges="orientation|keyboardHidden|screenSize|screenLayout" />
+
+        <!-- "Racha" — expense splitter / debt simplification mini-app. -->
+        <activity
+            android:name=".SplitwiseActivity"
+            android:exported="false"
+            android:configChanges="orientation|keyboardHidden|screenSize|screenLayout" />
     </application>
 </manifest>
