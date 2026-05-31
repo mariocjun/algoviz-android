@@ -234,7 +234,7 @@ private fun ExtremeScreen(onExit: () -> Unit) {
                     if (sound) VizBridge.nativeCelebrate()
                 }
             }
-            while (floaters.size > 16) floaters.removeAt(0)
+            while (floaters.size > 10) floaters.removeAt(0)   // "uns popzinhos", not a swarm
         }
     }
 
@@ -332,7 +332,7 @@ private fun ExtremeScreen(onExit: () -> Unit) {
                 Spacer(Modifier.weight(1f))
                 ControlCard {
                     Scrubber(cursor, buildEnd, pruneEnd, total, Modifier.fillMaxWidth(), onSeek)
-                    TransportButtons(playing, onReset, onBack, onPlay, onForward)
+                    TransportButtons(playing, onReset, onBack, onPlay, onForward, wrap = true)
                     SpeedSelector(spsIdx, { spsIdx = it }, wrap = true)
                 }
                 Spacer(Modifier.weight(1f))
@@ -388,7 +388,11 @@ private fun DrawScope.drawReductionFrame(
     val cy = (topInset + (size.height - bottomInset)) / 2f
     val rx = (size.width / 2f - 46f).coerceAtLeast(10f)
     val ry = ((size.height - topInset - bottomInset) / 2f - 6f).coerceAtLeast(10f)
-    val nodeR = when { n <= 8 -> 20f; n <= 14 -> 14f; else -> 11f }
+    // Node radius scales with the canvas so the ring fills a tablet as nicely as
+    // a phone (was a fixed px → tiny dots on a large screen). Tuned to match the
+    // old phone sizes at ~720px and grow proportionally on bigger surfaces.
+    val unit = minOf(size.width, size.height)
+    val nodeR = (unit * when { n <= 8 -> 0.028f; n <= 14 -> 0.020f; else -> 0.0153f }).coerceIn(7f, 40f)
     val center = Offset(cx, cy)
     val curve = 0.34f
 
@@ -685,13 +689,27 @@ private fun ControlCard(content: @Composable androidx.compose.foundation.layout.
 }
 
 @Composable
-private fun TransportButtons(playing: Boolean, onReset: () -> Unit, onBack: () -> Unit, onPlay: () -> Unit, onForward: () -> Unit) {
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-        TransportIcon(Icons.Filled.Refresh, "Reiniciar", onReset)
-        TransportIcon(Icons.Filled.SkipPrevious, "Voltar passo", onBack)
+private fun TransportButtons(
+    playing: Boolean, onReset: () -> Unit, onBack: () -> Unit, onPlay: () -> Unit, onForward: () -> Unit,
+    wrap: Boolean = false,
+) {
+    val reset = @Composable { TransportIcon(Icons.Filled.Refresh, "Reiniciar", onReset) }
+    val back = @Composable { TransportIcon(Icons.Filled.SkipPrevious, "Voltar passo", onBack) }
+    val play = @Composable {
         TransportIcon(if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
             if (playing) "Pausar" else "Reproduzir", onPlay, primary = true)
-        TransportIcon(Icons.Filled.SkipNext, "Avançar passo", onForward)
+    }
+    val fwd = @Composable { TransportIcon(Icons.Filled.SkipNext, "Avançar passo", onForward) }
+    if (wrap) {
+        // 2×2 so the 44–50dp targets fit the narrow landscape rail without clipping.
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) { reset(); back() }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) { play(); fwd() }
+        }
+    } else {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            reset(); back(); play(); fwd()
+        }
     }
 }
 
@@ -705,7 +723,7 @@ private fun SpeedSelector(spsIdx: Int, onSpeed: (Int) -> Unit, wrap: Boolean) {
                 .background(if (on) EX_BLUE else Color.White.copy(alpha = 0.06f))
                 .clickable { onSpeed(i) }
                 .semantics { contentDescription = "vel ${SPS_LABELS[i]}" }
-                .padding(horizontal = 11.dp, vertical = 7.dp),
+                .padding(horizontal = 14.dp, vertical = 11.dp),
         ) { Text(SPS_LABELS[i], color = if (on) Color.White else EX_DIM, fontWeight = FontWeight.SemiBold, fontSize = 12.sp) }
     }
     if (wrap) {
@@ -721,21 +739,21 @@ private fun SpeedSelector(spsIdx: Int, onSpeed: (Int) -> Unit, wrap: Boolean) {
 @Composable
 private fun TransportIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, desc: String, onClick: () -> Unit, primary: Boolean = false) {
     Box(
-        Modifier.size(if (primary) 46.dp else 40.dp).clip(RoundedCornerShape(50))
+        Modifier.size(if (primary) 50.dp else 44.dp).clip(RoundedCornerShape(50))
             .background(if (primary) EX_BLUE else Color.White.copy(alpha = 0.07f))
             .clickable { onClick() }.semantics { contentDescription = desc },
         contentAlignment = Alignment.Center,
-    ) { Icon(icon, contentDescription = desc, tint = if (primary) Color.White else EX_TXT, modifier = Modifier.size(if (primary) 26.dp else 22.dp)) }
+    ) { Icon(icon, contentDescription = desc, tint = if (primary) Color.White else EX_TXT, modifier = Modifier.size(if (primary) 27.dp else 23.dp)) }
 }
 
 @Composable
 private fun GlassIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, desc: String, onClick: () -> Unit, modifier: Modifier) {
     Box(
-        modifier.size(40.dp).clip(RoundedCornerShape(50)).background(GLASS.copy(alpha = 0.8f))
+        modifier.size(46.dp).clip(RoundedCornerShape(50)).background(GLASS.copy(alpha = 0.8f))
             .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(50))
             .clickable { onClick() }.semantics { contentDescription = desc },
         contentAlignment = Alignment.Center,
-    ) { Icon(icon, contentDescription = desc, tint = EX_TXT, modifier = Modifier.size(22.dp)) }
+    ) { Icon(icon, contentDescription = desc, tint = EX_TXT, modifier = Modifier.size(23.dp)) }
 }
 
 @Composable

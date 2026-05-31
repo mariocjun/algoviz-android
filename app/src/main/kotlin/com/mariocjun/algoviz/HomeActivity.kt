@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -116,8 +117,11 @@ class HomeActivity : ComponentActivity() {
 @Composable
 private fun HomeScreen() {
     val ctx = LocalContext.current
+    // Centre + cap the column so tiles don't stretch into huge bars on a tablet.
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
     Column(
         Modifier
+            .widthIn(max = 600.dp)
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
@@ -139,6 +143,7 @@ private fun HomeScreen() {
                 ctx.startActivity(Intent(ctx, t.target))
             }
         }
+    }
     }
 }
 
