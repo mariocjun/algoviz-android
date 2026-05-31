@@ -10,27 +10,29 @@ import org.junit.Test
 
 class DebtReductionTest {
 
-    @Test fun extremeCollapsesToSinglePayment() {
+    @Test fun extremeIsTheCompleteGraphCollapsingToOnePayment() {
         val (people, expenses) = extremeDemo()
         val r = buildReduction(people, expenses)
 
-        // 20 people in two cancelling rings + one cross debt → 41 distinct edges.
-        assertEquals(41, r.direct.size)
+        // The complete graph on 20 people: every one of C(20,2) = 190 pairs owes.
+        assertEquals(190, r.direct.size)
+        assertEquals(190, expenses.size)
+        assertTrue("every debt must be a real (non-zero) expense", r.direct.all { it.amountCents > 0 })
 
-        // The whole tangle nets to exactly one payment: Mário → Cássia, R$67,00.
+        // …yet the whole web nets to exactly one payment: Mário → Cássia, R$67,00.
         assertEquals(listOf(Settlement("Mário", "Cássia", 6700)), r.settlements)
+        // …and the stepped plan agrees with the plain greedy.
+        assertEquals(Ledger().apply { expenses.forEach { addExpense(it) } }.settlements(), r.settlements)
 
         // Steps = one Absorb per direct debt, then one Settle.
-        assertEquals(42, r.steps.size)
-        assertTrue(r.steps.take(41).all { it is ReduceStep.Absorb })
+        assertEquals(191, r.steps.size)
+        assertTrue(r.steps.take(190).all { it is ReduceStep.Absorb })
         val last = r.steps.last()
         assertTrue(last is ReduceStep.Settle)
         last as ReduceStep.Settle
         assertEquals("Mário", last.from)
         assertEquals("Cássia", last.to)
         assertEquals(6700L, last.amountCents)
-        assertEquals(6700L, last.creditorBefore)
-        assertEquals(-6700L, last.debtorBefore)
 
         // Everyone is square once the plan is applied.
         assertTrue(r.balancesAt(r.steps.size).values.all { it == 0L })

@@ -107,22 +107,43 @@ fun buildReduction(people: List<Person>, expenses: List<Expense>): DebtReduction
     return DebtReduction(people, direct, settlements, steps)
 }
 
-/** The extreme demo: 20 people in two debt rings that fully cancel + one cross
- *  debt, so 41 direct debts (20 owe 20) collapse to a SINGLE payment —
- *  Mário deve R$67,00 a Cássia. Script- and host-test-verified. Shared by the
- *  Racha graph (static) and the Extreme visualizer (animated). */
+/** The extreme demo: the COMPLETE debt graph on 20 people — every one of the
+ *  C(20,2) = 190 unique pairs owes, the maximum possible ("extremo") — yet it
+ *  all nets to a SINGLE payment: Mário deve R$67,00 a Cássia.
+ *
+ *  Why it needs a construction (not just rings): with 20 vertices each of odd
+ *  degree 19, no uniform-amount orientation can zero 18 people's net. So we lay
+ *  a uniform base debt on all 190 pairs (i owes j) and apply one path-flow
+ *  correction along 0–1–…–19 that retargets the net to b = {Mário −67, Cássia
+ *  +67, rest 0} while keeping every one of the 190 debts non-zero. The greedy
+ *  plan on that net is exactly [Mário → Cássia, 6700]. Host-test-verified. */
 fun extremeDemo(): Pair<List<String>, List<Expense>> {
     val p = listOf(
         "Mário", "Cássia", "Bia", "Caio", "Duda", "Ana", "Beto", "Lia", "Téo", "Rafa",
         "Nina", "Gus", "Lara", "Ivo", "Sofia", "João", "Manu", "Léo", "Cleo", "Vini",
     )
+    val n = p.size                                   // 20
+    val b = LongArray(n).also { it[0] = -6700L; it[1] = 6700L }   // Mário owes Cássia R$67
+    // Uniform base: for every pair i<j, i owes j BASE. Net from that base is the
+    // gradient g_k = BASE*(2k-(n-1)); f_k = prefix sum of (b_k - g_k) is the flow
+    // the path edge {k,k+1} must carry, so it becomes "i owes j (BASE - f_k)".
+    val BASE = 137L
+    val pathSigned = LongArray(n - 1)
+    var f = 0L
+    for (k in 0 until n - 1) {
+        f += b[k] - BASE * (2L * k - (n - 1))
+        pathSigned[k] = BASE - f                     // signed: + = i owes j, - = j owes i
+    }
     val ex = buildList {
-        for (i in 0 until 20) {
-            add(Expense(p[i], 2000, SplitMode.Equal(listOf(p[i], p[(i + 1) % 20])), "anel"))
-            add(Expense(p[i], 2000, SplitMode.Equal(listOf(p[i], p[(i + 2) % 20])), "anel2"))
+        for (i in 0 until n) for (j in i + 1 until n) {
+            val signed = if (j == i + 1) pathSigned[i] else BASE
+            val debtor: Int; val creditor: Int; val amt: Long
+            if (signed >= 0) { debtor = i; creditor = j; amt = signed }
+            else { debtor = j; creditor = i; amt = -signed }
+            // 2-person Equal expense: the creditor "paid" 2*amt for {creditor, debtor},
+            // so the debtor owes the creditor exactly `amt` — one directed debt per pair.
+            add(Expense(p[creditor], 2L * amt, SplitMode.Equal(listOf(p[creditor], p[debtor])), "x"))
         }
-        // Cássia pays R$134 for {Cássia, Mário} → each owes R$67 → net: Mário owes Cássia R$67.
-        add(Expense("Cássia", 13400, SplitMode.Equal(listOf("Cássia", "Mário")), "viagem"))
     }
     return p to ex
 }

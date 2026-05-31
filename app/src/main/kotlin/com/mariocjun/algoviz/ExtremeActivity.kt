@@ -112,7 +112,7 @@ private val GLASS = Color(0xFF15151B)     // translucent panel base
 // Steps per second. Spans the slow end (½, 1) the owner likes through 8/16.
 private val SPS_LABELS = arrayOf("½", "1", "2", "4", "8", "16")
 private val SPS_MS = longArrayOf(2000, 1000, 500, 250, 125, 62)
-private const val DEFAULT_SPS = 3         // 4 steps/sec
+private const val DEFAULT_SPS = 4         // 8 steps/sec (190 absorbs is a lot at 4)
 
 class ExtremeActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -265,7 +265,7 @@ private fun ExtremeScreen(onExit: () -> Unit) {
             Box(Modifier.weight(1f).fillMaxHeight()) {
                 graph(Modifier.fillMaxSize())
                 status(Modifier.align(Alignment.TopStart).padding(12.dp))
-                if (done) PayoffBanner(hue, pulse, Modifier.align(Alignment.Center))
+                if (done) PayoffBanner(r.direct.size, r.settlements.size, hue, pulse, Modifier.align(Alignment.Center))
             }
             Column(
                 Modifier.width(214.dp).fillMaxHeight().padding(10.dp),
@@ -295,7 +295,7 @@ private fun ExtremeScreen(onExit: () -> Unit) {
                     if (sound) "Som ligado" else "Som desligado", { sound = !sound }, Modifier)
                 GlassIcon(Icons.Filled.Close, "Voltar", onExit, Modifier)
             }
-            if (done) PayoffBanner(hue, pulse, Modifier.align(Alignment.Center))
+            if (done) PayoffBanner(r.direct.size, r.settlements.size, hue, pulse, Modifier.align(Alignment.Center))
             Column(
                 Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(12.dp)
                     .onGloballyPositioned { botGuardPx = it.boundsInParent().top },
@@ -348,12 +348,17 @@ private fun DrawScope.drawReductionFrame(
         if (rainbow) Color.hsv(((hue + i * (360f / n)) % 360f), 0.72f, 1f) else colorOf(name)
 
     // 1) Remaining direct tangle (not yet absorbed) — faint, so settle edges pop.
+    // The denser the web, the more translucent (and arrow-free) each edge, so 190
+    // overlapping debts read as a haze that thins out rather than a black blob.
+    val dense = r.direct.size > 80
+    val tangleAlpha = if (dense) 0.12f else 0.22f
     val visibleFrom = cursor.coerceAtMost(absorb)
     for (i in visibleFrom until absorb) {
         val d = r.direct[i]
         val pu = pos[d.from] ?: continue; val pv = pos[d.to] ?: continue
         drawEdge(pu, pv, center, curve, nodeR, thickness(d.amountCents, maxAmt, 4f),
-            (if (rainbow) Color.hsv((hue + i * 11f) % 360f, 0.6f, 1f) else EX_OWES).copy(alpha = 0.22f), arrow = true)
+            (if (rainbow) Color.hsv((hue + i * 11f) % 360f, 0.6f, 1f) else EX_OWES).copy(alpha = tangleAlpha),
+            arrow = !dense)
     }
 
     // 2) Settlement edges already drawn (Act 2) — bright, with amount chips.
@@ -377,8 +382,11 @@ private fun DrawScope.drawReductionFrame(
         if (pu != null && pv != null) drawBolt(pu, pv, center, curve, nodeR, edgeFlash, cursor)
     }
 
-    // 4) Nodes + initials + running balance chips (fade out as they hit zero).
+    // 4) Nodes + initials + running balance chips. Chips only when few nodes are
+    // still live, so the messy 190-edge middle stays clean and the numbers appear
+    // exactly at the convergence (… → just Mário & Cássia → the payment).
     val bal = r.balancesAt(cursor)
+    val liveCount = bal.values.count { it != 0L }
     order.forEachIndexed { i, name ->
         val pp = pos[name] ?: return@forEachIndexed
         val b = bal[name] ?: 0L
@@ -392,7 +400,7 @@ private fun DrawScope.drawReductionFrame(
         val im = measurer.measure(initials(name), ist)
         drawText(measurer, initials(name),
             topLeft = Offset(pp.x - im.size.width / 2f, pp.y - im.size.height / 2f), style = ist)
-        if (live) {
+        if (live && liveCount <= 6) {
             val bc = if (b > 0) EX_OWED else EX_OWES
             val txt = (if (b > 0) "+" else "−") + money(kotlin.math.abs(b)).removePrefix("R$ ")
             val bs = TextStyle(color = bc, fontSize = (nodeR * 0.5f).coerceIn(8f, 12f).sp, fontWeight = FontWeight.Bold)
@@ -528,7 +536,7 @@ private fun ExtremeStatus(
 }
 
 @Composable
-private fun PayoffBanner(hue: Float, pulse: Float, modifier: Modifier) {
+private fun PayoffBanner(directCount: Int, payCount: Int, hue: Float, pulse: Float, modifier: Modifier) {
     GlassCard(modifier.widthIn(max = 360.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             for ((i, c) in "Mário".withIndex())
@@ -542,7 +550,7 @@ private fun PayoffBanner(hue: Float, pulse: Float, modifier: Modifier) {
             style = MaterialTheme.typography.headlineMedium)
         Text("para Cássia", color = EX_TXT, style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(4.dp))
-        Text("41 diretas → 1 pagamento", color = EX_DIM, style = MaterialTheme.typography.labelMedium)
+        Text("$directCount diretas → $payCount pagamento", color = EX_DIM, style = MaterialTheme.typography.labelMedium)
     }
 }
 
