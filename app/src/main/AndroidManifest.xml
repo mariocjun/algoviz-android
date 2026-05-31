@@ -51,5 +51,12 @@
             android:name=".SplitwiseActivity"
             android:exported="false"
             android:configChanges="orientation|keyboardHidden|screenSize|screenLayout" />
+
+        <!-- "Extremo" — full-screen animated debt-reduction easter-egg. Not a
+             launcher tile; reached only from the Racha graph's ✨ chip. -->
+        <activity
+            android:name=".ExtremeActivity"
+            android:exported="false"
+            android:configChanges="orientation|keyboardHidden|screenSize|screenLayout" />
     </application>
 </manifest>

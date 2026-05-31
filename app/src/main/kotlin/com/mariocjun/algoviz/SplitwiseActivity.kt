@@ -6,6 +6,7 @@
 // flex — "we simplified N debts into M payments".
 package com.mariocjun.algoviz
 
+import android.content.Intent
 import android.content.res.Configuration
 import android.os.Bundle
 import android.view.HapticFeedbackConstants
@@ -81,6 +82,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
@@ -111,16 +113,17 @@ private val BLUE = Color(0xFF4296FA)
 private val OWED = Color(0xFF3DCF7A)   // creditor (is owed) — green
 private val OWES = Color(0xFFF2554B)   // debtor (owes) — coral
 
-// Distinct per-person avatar hues.
-private val PERSON_HUES = listOf(
+// Distinct per-person avatar hues. Shared with the Extreme visualizer so the
+// same person keeps the same colour across the static graph and the animation.
+internal val PERSON_HUES = listOf(
     Color(0xFF4296FA), Color(0xFF9B5DE5), Color(0xFFE08A2E), Color(0xFF2BB6C4),
     Color(0xFFE05299), Color(0xFF35C46B), Color(0xFFE8B62E), Color(0xFFF2554B),
 )
 
-private fun money(cents: Long): String =
+internal fun money(cents: Long): String =
     "R$ " + String.format(Locale("pt", "BR"), "%.2f", cents / 100.0)
 
-private fun initials(name: String): String =
+internal fun initials(name: String): String =
     name.trim().split(" ").filter { it.isNotEmpty() }.take(2)
         .joinToString("") { it.first().uppercase() }.ifEmpty { "?" }
 
@@ -144,6 +147,7 @@ class SplitwiseActivity : ComponentActivity() {
 @Composable
 private fun SplitScreen() {
     val view = LocalView.current
+    val ctx = LocalContext.current
     val people = remember { mutableStateListOf("Mário", "Bia", "Caio", "Duda") }
     val expenses = remember {
         mutableStateListOf(
@@ -177,16 +181,20 @@ private fun SplitScreen() {
     }
 
     var tab by remember { mutableIntStateOf(0) }
+    var extremeLoaded by remember { mutableStateOf(false) }
     val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
 
     // Easter-egg loader: swap the ledger for the extreme 20-owe-20 demo (41 direct
     // debts → 1 payment: Mário deve R$67,00 a Cássia) and jump to the Grafo tab.
+    // Once loaded, the ✨ chip turns into the gateway to the full-screen Extremo.
     val loadExtreme: () -> Unit = {
         val (dp, de) = extremeDemo()
         people.clear(); people.addAll(dp)
         expenses.clear(); expenses.addAll(de)
         tab = 2
+        extremeLoaded = true
     }
+    val launchExtreme: () -> Unit = { ctx.startActivity(Intent(ctx, ExtremeActivity::class.java)) }
 
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         Spacer(Modifier.height(if (landscape) 4.dp else 8.dp))
@@ -214,7 +222,8 @@ private fun SplitScreen() {
                 SettlementsSection(settlements, colorOf)
                 Spacer(Modifier.height(16.dp))
             }
-            else -> DebtGraph(people, expenses.toList(), settlements, colorOf, Modifier.fillMaxSize(), onExample = loadExtreme)
+            else -> DebtGraph(people, expenses.toList(), settlements, colorOf, Modifier.fillMaxSize(),
+                onExample = loadExtreme, extremeLoaded = extremeLoaded, onExtreme = launchExtreme)
         }
     }
 }
@@ -580,6 +589,7 @@ private fun PrimaryWide(label: String, color: Color, onClick: () -> Unit) {
 private fun DebtGraph(
     people: List<String>, expenses: List<Expense>, settlements: List<Settlement>,
     colorOf: (String) -> Color, modifier: Modifier = Modifier, onExample: () -> Unit = {},
+    extremeLoaded: Boolean = false, onExtreme: () -> Unit = {},
 ) {
     val measurer = rememberTextMeasurer()
     // Direct debts (the "before"): each non-payer owes their Equal share to the payer.
@@ -686,12 +696,23 @@ private fun DebtGraph(
             Spacer(Modifier.width(6.dp))
             Pill("${settlements.size} pagam.", OWED)
         }
-        // easter-egg: load the extreme 20-owe-20 example (41 debts → 1 payment)
+        // easter-egg: 1st tap loads the extreme 20-owe-20 example (41 debts → 1
+        // payment); once loaded, the chip becomes the gateway to the full-screen
+        // animated Extremo.
         Box(
             Modifier.align(Alignment.TopEnd).padding(12.dp)
-                .clip(RoundedCornerShape(50)).background(PANEL_HI).clickable { onExample() }
+                .clip(RoundedCornerShape(50))
+                .background(if (extremeLoaded) BLUE.copy(alpha = 0.20f) else PANEL_HI)
+                .clickable { if (extremeLoaded) onExtreme() else onExample() }
                 .padding(horizontal = 12.dp, vertical = 7.dp),
-        ) { Text("✨ exemplo", color = TXT_DIM, style = MaterialTheme.typography.labelMedium) }
+        ) {
+            Text(
+                if (extremeLoaded) "✨ Extremo →" else "✨ exemplo",
+                color = if (extremeLoaded) BLUE else TXT_DIM,
+                fontWeight = if (extremeLoaded) FontWeight.SemiBold else FontWeight.Normal,
+                style = MaterialTheme.typography.labelMedium,
+            )
+        }
         // floating toggle (bottom-center)
         Row(
             Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp)
@@ -762,23 +783,4 @@ private fun DrawScope.drawDebtEdge(
             cornerRadius = CornerRadius(7f, 7f), style = Stroke(1f))
         drawText(measurer, money(amt), topLeft = Offset(lx - m.size.width / 2f, ly - m.size.height / 2f), style = style)
     }
-}
-
-/** The extreme demo: 20 people in two debt rings that fully cancel + one cross
- *  debt, so 41 direct debts (20 owe 20) collapse to a SINGLE payment —
- *  Mário deve R$67,00 a Cássia. Script-verified. */
-private fun extremeDemo(): Pair<List<String>, List<Expense>> {
-    val p = listOf(
-        "Mário", "Cássia", "Bia", "Caio", "Duda", "Ana", "Beto", "Lia", "Téo", "Rafa",
-        "Nina", "Gus", "Lara", "Ivo", "Sofia", "João", "Manu", "Léo", "Cleo", "Vini",
-    )
-    val ex = buildList {
-        for (i in 0 until 20) {
-            add(Expense(p[i], 2000, SplitMode.Equal(listOf(p[i], p[(i + 1) % 20])), "anel"))
-            add(Expense(p[i], 2000, SplitMode.Equal(listOf(p[i], p[(i + 2) % 20])), "anel2"))
-        }
-        // Cássia pays R$134 for {Cássia, Mário} → each owes R$67 → net: Mário owes Cássia R$67.
-        add(Expense("Cássia", 13400, SplitMode.Equal(listOf("Cássia", "Mário")), "viagem"))
-    }
-    return p to ex
 }
