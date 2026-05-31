@@ -24,6 +24,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.Card
@@ -81,6 +82,13 @@ private val TILES = listOf(
         icon = Icons.Filled.Speed,
         target = MainActivity::class.java,
         testId = "tile_profiler",
+    ),
+    Tile(
+        title = "Min Cash Flow",
+        subtitle = "190 dívidas → 1 pagamento · o algoritmo guloso do Racha",
+        icon = Icons.Filled.Hub,
+        target = ExtremeActivity::class.java,
+        testId = "tile_mincashflow",
     ),
 )
 

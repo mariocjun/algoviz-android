@@ -147,10 +147,11 @@ private fun ExtremeScreen(onExit: () -> Unit) {
     val expenses = remember { extremeDemo().second }
     val r = remember { buildReduction(people, expenses) }
     val total = r.steps.size
-    val absorb = r.absorbCount
+    val buildEnd = r.buildEnd
+    val pruneEnd = r.pruneEnd
     // Lay nodes by their net balance just before settling, so the two non-zero
     // people (Cássia +, Mário −) land adjacent at the top and their final arc reads.
-    val netBal = remember { r.balancesAt(absorb) }
+    val netBal = remember { r.balancesAt(pruneEnd) }
     val order = remember { people.sortedByDescending { netBal[it] ?: 0L } }
     val ringIndex = remember(order) { order.withIndex().associate { (i, name) -> name to i } }
     val colorOf: (String) -> Color =
@@ -161,6 +162,7 @@ private fun ExtremeScreen(onExit: () -> Unit) {
     var spsIdx by remember { mutableIntStateOf(DEFAULT_SPS) }
     var rainbow by remember { mutableStateOf(false) }
     var sound by remember { mutableStateOf(true) }
+    var heldAtFull by remember { mutableStateOf(false) }   // one auto-pause on the full graph
     var scale by remember { mutableFloatStateOf(1f) }
     var pan by remember { mutableStateOf(Offset.Zero) }
 
@@ -193,15 +195,17 @@ private fun ExtremeScreen(onExit: () -> Unit) {
         if (nc == cursor) return
         val advancing = nc > cursor
         cursor = nc
-        val isSettle = nc > absorb
+        val isSettle = nc > pruneEnd
         strike(isSettle || nc == total)
         if (manual || isSettle || nc == total) haptic()
-        // ASMR: a pentatonic note per absorbed debt (pitch follows the creditor's
-        // place on the ring), a celebratory chord on the settlement. Forward only.
+        // ASMR: a pentatonic note as each debt appears (Build) or nets away
+        // (Absorb) — pitch follows the creditor's place on the ring — and a
+        // celebratory chord on the settlement. Forward only.
         if (advancing && sound) {
-            if (isSettle) VizBridge.nativeCelebrate()
-            else (r.steps[nc - 1] as? ReduceStep.Absorb)?.let {
-                VizBridge.nativePlayNote((ringIndex[it.edge.to] ?: 0).toFloat() / order.size)
+            when (val st = r.steps[nc - 1]) {
+                is ReduceStep.Settle -> VizBridge.nativeCelebrate()
+                is ReduceStep.Build -> VizBridge.nativePlayNote((ringIndex[st.edge.to] ?: 0).toFloat() / order.size)
+                is ReduceStep.Absorb -> VizBridge.nativePlayNote((ringIndex[st.edge.to] ?: 0).toFloat() / order.size)
             }
         }
     }
@@ -217,6 +221,8 @@ private fun ExtremeScreen(onExit: () -> Unit) {
             kotlinx.coroutines.delay(SPS_MS[spsIdx])
             if (!playing) break
             goTo(cursor + 1, manual = false)
+            // Hold once on the complete graph so "cheio" is a real beat.
+            if (cursor == buildEnd && !heldAtFull) { heldAtFull = true; playing = false; break }
         }
         playing = false
     }
@@ -224,7 +230,7 @@ private fun ExtremeScreen(onExit: () -> Unit) {
     var topGuardPx by remember { mutableFloatStateOf(0f) }
     var botGuardPx by remember { mutableFloatStateOf(0f) }
 
-    val onReset = { playing = false; cursor = 0 }
+    val onReset = { playing = false; cursor = 0; heldAtFull = false }
     val onBack = { playing = false; goTo(cursor - 1, manual = true) }
     val onPlay = { if (done) cursor = 0; playing = !playing }
     val onForward = { playing = false; goTo(cursor + 1, manual = true) }
@@ -246,7 +252,7 @@ private fun ExtremeScreen(onExit: () -> Unit) {
                 .pointerInput(Unit) { detectTapGestures(onDoubleTap = { scale = 1f; pan = Offset.Zero }) },
         ) {
             drawReductionFrame(
-                r, order, colorOf, cursor, absorb, measurer,
+                r, order, colorOf, cursor, measurer,
                 bob, pulse, hue, rainbow, edgeFlash.value, screenFlash.value,
                 topGuardPx, if (landscape) 0f else botGuardPx,
             )
@@ -254,7 +260,7 @@ private fun ExtremeScreen(onExit: () -> Unit) {
     }
     val status: @Composable (Modifier) -> Unit = { mod ->
         ExtremeStatus(
-            r = r, cursor = cursor, absorb = absorb, total = total,
+            r = r, cursor = cursor, total = total,
             rainbow = rainbow, hue = hue, onToggleRainbow = { rainbow = !rainbow },
             modifier = mod.onGloballyPositioned { topGuardPx = it.boundsInParent().bottom },
         )
@@ -279,7 +285,7 @@ private fun ExtremeScreen(onExit: () -> Unit) {
                 }
                 Spacer(Modifier.weight(1f))
                 ControlCard {
-                    Scrubber(cursor, absorb, total, Modifier.fillMaxWidth(), onSeek)
+                    Scrubber(cursor, buildEnd, pruneEnd, total, Modifier.fillMaxWidth(), onSeek)
                     TransportButtons(playing, onReset, onBack, onPlay, onForward)
                     SpeedSelector(spsIdx, { spsIdx = it }, wrap = true)
                 }
@@ -302,7 +308,7 @@ private fun ExtremeScreen(onExit: () -> Unit) {
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Scrubber(cursor, absorb, total, Modifier.fillMaxWidth().widthIn(max = 560.dp), onSeek)
+                Scrubber(cursor, buildEnd, pruneEnd, total, Modifier.fillMaxWidth().widthIn(max = 560.dp), onSeek)
                 ControlCard {
                     TransportButtons(playing, onReset, onBack, onPlay, onForward)
                     SpeedSelector(spsIdx, { spsIdx = it }, wrap = false)
@@ -316,7 +322,7 @@ private fun ExtremeScreen(onExit: () -> Unit) {
 
 private fun DrawScope.drawReductionFrame(
     r: DebtReduction, order: List<String>, colorOf: (String) -> Color,
-    cursor: Int, absorb: Int, measurer: TextMeasurer,
+    cursor: Int, measurer: TextMeasurer,
     bob: Float, pulse: Float, hue: Float, rainbow: Boolean,
     edgeFlash: Float, screenFlash: Float, topGuardPx: Float, botGuardPx: Float,
 ) {
@@ -347,13 +353,18 @@ private fun DrawScope.drawReductionFrame(
     fun nodeColor(name: String, i: Int): Color =
         if (rainbow) Color.hsv(((hue + i * (360f / n)) % 360f), 0.72f, 1f) else colorOf(name)
 
-    // 1) Remaining direct tangle (not yet absorbed) — faint, so settle edges pop.
-    // The denser the web, the more translucent (and arrow-free) each edge, so 190
-    // overlapping debts read as a haze that thins out rather than a black blob.
+    // 1) Direct debts on screen. Building (cursor ≤ buildEnd): the first `cursor`
+    // debts have appeared. Pruning (cursor ≤ pruneEnd): the first (cursor-buildEnd)
+    // have netted away, so the remaining tail is drawn. The denser the web, the
+    // more translucent (and arrow-free) each edge — 190 debts read as a haze.
+    val buildEnd = r.buildEnd
+    val pruneEnd = r.pruneEnd
+    val visLo: Int; val visHi: Int
+    if (cursor <= buildEnd) { visLo = 0; visHi = cursor.coerceAtMost(r.direct.size) }
+    else { visLo = (cursor - buildEnd).coerceIn(0, r.direct.size); visHi = r.direct.size }
     val dense = r.direct.size > 80
     val tangleAlpha = if (dense) 0.12f else 0.22f
-    val visibleFrom = cursor.coerceAtMost(absorb)
-    for (i in visibleFrom until absorb) {
+    for (i in visLo until visHi) {
         val d = r.direct[i]
         val pu = pos[d.from] ?: continue; val pv = pos[d.to] ?: continue
         drawEdge(pu, pv, center, curve, nodeR, thickness(d.amountCents, maxAmt, 4f),
@@ -361,8 +372,8 @@ private fun DrawScope.drawReductionFrame(
             arrow = !dense)
     }
 
-    // 2) Settlement edges already drawn (Act 2) — bright, with amount chips.
-    val settledShown = (cursor - absorb).coerceIn(0, r.settlements.size)
+    // 2) Settlement edges (after the prune phase) — bright, with amount chips.
+    val settledShown = (cursor - pruneEnd).coerceIn(0, r.settlements.size)
     for (i in 0 until settledShown) {
         val s = r.settlements[i]
         val pu = pos[s.from] ?: continue; val pv = pos[s.to] ?: continue
@@ -375,6 +386,7 @@ private fun DrawScope.drawReductionFrame(
     if (edgeFlash > 0.02f && cursor in 1..r.steps.size) {
         val st = r.steps[cursor - 1]
         val pair = when (st) {
+            is ReduceStep.Build -> st.edge.from to st.edge.to
             is ReduceStep.Absorb -> st.edge.from to st.edge.to
             is ReduceStep.Settle -> st.from to st.to
         }
@@ -490,29 +502,39 @@ private fun DrawScope.drawAmountChip(
 
 @Composable
 private fun ExtremeStatus(
-    r: DebtReduction, cursor: Int, absorb: Int, total: Int,
+    r: DebtReduction, cursor: Int, total: Int,
     rainbow: Boolean, hue: Float, onToggleRainbow: () -> Unit, modifier: Modifier,
 ) {
     val titleColor = if (rainbow) Color.hsv(hue % 360f, 0.8f, 1f) else EX_TXT
+    val buildEnd = r.buildEnd; val pruneEnd = r.pruneEnd; val nd = r.direct.size
     val phase: String; val caption: String; val formula: String?
     when {
         cursor == 0 -> {
-            phase = "${absorb} dívidas diretas · 20 pessoas"
-            caption = "Toque ▶ para reduzir."
+            phase = "${r.people.size} pessoas · C(${r.people.size},2) = $nd"
+            caption = "Toque ▶ — vamos montar todas as dívidas possíveis."
             formula = null
         }
-        cursor <= absorb -> {
-            phase = "Absorvendo diretas · $cursor / $absorb"
-            caption = "Cada dívida vira saldo; os ciclos se cancelam."
-            formula = "restam ${absorb - cursor} arestas"
+        cursor < buildEnd -> {                                   // Act 1 — Enchendo
+            phase = "Enchendo · $cursor / $nd dívidas"
+            caption = "Todo par pode dever: o grafo completo se forma."
+            formula = null
         }
-        else -> {
-            // Act 2: the current step is a settlement — keep its min() formula on
-            // screen, including at the payoff (1 settle would otherwise flash by).
+        cursor == buildEnd -> {                                  // Act 2 — Cheio
+            phase = "Grafo cheio · $nd dívidas"
+            caption = "Todas as dívidas diretas. ▶ para simplificar."
+            formula = null
+        }
+        cursor <= pruneEnd -> {                                  // Act 3 — Podando
+            phase = "Podando · ${cursor - buildEnd} / $nd"
+            caption = "Cada dívida vira saldo; os ciclos se cancelam."
+            formula = "restam ${pruneEnd - cursor} arestas"
+        }
+        else -> {                                                // Act 4 — Acerto / Fim
+            // Keep the settlement's min() formula on screen, incl. at the payoff.
             val s = r.steps[cursor - 1] as? ReduceStep.Settle
-            phase = if (cursor >= total) "Reduzido · $absorb → ${r.settlements.size}"
-                    else "Acerto · pagamento ${cursor - absorb} / ${r.settlements.size}"
-            caption = if (cursor >= total) "1 pagamento zera todo mundo."
+            phase = if (cursor >= total) "Reduzido · $nd → ${r.settlements.size}"
+                    else "Acerto · pagamento ${cursor - pruneEnd} / ${r.settlements.size}"
+            caption = if (cursor >= total) "1 pagamento zera todo mundo (economia de ${nd - r.settlements.size})."
                       else "Maior credor recebe do maior devedor."
             formula = s?.let { "${money(it.amountCents)} = min(${money(it.creditorBefore)}, ${money(-it.debtorBefore)})" }
         }
@@ -555,7 +577,7 @@ private fun PayoffBanner(directCount: Int, payCount: Int, hue: Float, pulse: Flo
 }
 
 @Composable
-private fun Scrubber(cursor: Int, absorb: Int, total: Int, modifier: Modifier, onSeek: (Int) -> Unit) {
+private fun Scrubber(cursor: Int, buildEnd: Int, pruneEnd: Int, total: Int, modifier: Modifier, onSeek: (Int) -> Unit) {
     Box(
         modifier
             .height(26.dp)
@@ -571,10 +593,12 @@ private fun Scrubber(cursor: Int, absorb: Int, total: Int, modifier: Modifier, o
     ) {
         Canvas(Modifier.fillMaxWidth().height(6.dp)) {
             val w = size.width; val h = size.height; val y = h / 2f
-            val absX = w * (absorb.toFloat() / total)
-            // Act 1 track (absorb), Act 2 track (settle), progress, thumb.
-            drawLine(EX_OWES.copy(alpha = 0.25f), Offset(0f, y), Offset(absX, y), strokeWidth = h)
-            drawLine(EX_OWED.copy(alpha = 0.25f), Offset(absX, y), Offset(w, y), strokeWidth = h)
+            val buildX = w * (buildEnd.toFloat() / total)
+            val pruneX = w * (pruneEnd.toFloat() / total)
+            // three phase tracks: Enchendo · Podando · Acerto, then progress + thumb.
+            drawLine(EX_OWES.copy(alpha = 0.22f), Offset(0f, y), Offset(buildX, y), strokeWidth = h)
+            drawLine(Color(0xFFE8B62E).copy(alpha = 0.22f), Offset(buildX, y), Offset(pruneX, y), strokeWidth = h)
+            drawLine(EX_OWED.copy(alpha = 0.30f), Offset(pruneX, y), Offset(w, y), strokeWidth = h)
             val px = w * (cursor.toFloat() / total)
             drawLine(EX_BLUE, Offset(0f, y), Offset(px, y), strokeWidth = h)
             drawCircle(Color.White, radius = h * 1.6f, center = Offset(px.coerceIn(0f, w), y))

@@ -24,9 +24,11 @@ class DebtReductionTest {
         // …and the stepped plan agrees with the plain greedy.
         assertEquals(Ledger().apply { expenses.forEach { addExpense(it) } }.settlements(), r.settlements)
 
-        // Steps = one Absorb per direct debt, then one Settle.
-        assertEquals(191, r.steps.size)
-        assertTrue(r.steps.take(190).all { it is ReduceStep.Absorb })
+        // Steps = one Build per debt (graph fills), one Absorb per debt (graph
+        // nets away), then one Settle: 190 + 190 + 1 = 381.
+        assertEquals(381, r.steps.size)
+        assertTrue(r.steps.take(190).all { it is ReduceStep.Build })
+        assertTrue(r.steps.subList(190, 380).all { it is ReduceStep.Absorb })
         val last = r.steps.last()
         assertTrue(last is ReduceStep.Settle)
         last as ReduceStep.Settle
@@ -34,6 +36,10 @@ class DebtReductionTest {
         assertEquals("Cássia", last.to)
         assertEquals(6700L, last.amountCents)
 
+        // The fill phase leaves balances untouched; the prune phase forms the net.
+        assertTrue(r.balancesAt(r.buildEnd).values.all { it == 0L })
+        assertEquals(-6700L, r.balancesAt(r.pruneEnd)["Mário"])
+        assertEquals(6700L, r.balancesAt(r.pruneEnd)["Cássia"])
         // Everyone is square once the plan is applied.
         assertTrue(r.balancesAt(r.steps.size).values.all { it == 0L })
     }
@@ -42,7 +48,7 @@ class DebtReductionTest {
         val (people, expenses) = extremeDemo()
         val r = buildReduction(people, expenses)
         val ledgerBal = Ledger().apply { expenses.forEach { addExpense(it) } }.balances()
-        val absorbed = r.balancesAt(r.absorbCount)
+        val absorbed = r.balancesAt(r.pruneEnd)   // after the whole prune phase
         for (p in people) assertEquals("balance of $p", ledgerBal[p], absorbed[p])
     }
 

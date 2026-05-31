@@ -19,15 +19,22 @@ sealed class ReduceStep {
     /** Net balance per person after this step (signed cents; + = creditor). */
     abstract val balAfter: Map<Person, Long>
 
-    /** Act 1 — fold one raw debt into the running net balances (its edge then
-     *  disappears from the tangle). */
+    /** Phase 1 (Enchendo) — reveal one raw debt as an edge. No netting yet, so
+     *  `balAfter` is all zero: this phase just builds the problem on screen. */
+    data class Build(
+        val edge: DirectDebt,
+        override val balAfter: Map<Person, Long>,
+    ) : ReduceStep()
+
+    /** Phase 2 (Podando) — fold one raw debt into the running net balances (its
+     *  edge then disappears from the tangle). */
     data class Absorb(
         val edge: DirectDebt,
         override val balAfter: Map<Person, Long>,
     ) : ReduceStep()
 
-    /** Act 2 — one greedy settlement: the biggest creditor is paid by the
-     *  biggest debtor, `amountCents = min(creditorBefore, -debtorBefore)`. */
+    /** Phase 3 (Acerto) — one greedy settlement: the biggest creditor is paid by
+     *  the biggest debtor, `amountCents = min(creditorBefore, -debtorBefore)`. */
     data class Settle(
         val from: Person, val to: Person, val amountCents: Long,
         val creditorBefore: Long, val debtorBefore: Long,
@@ -36,16 +43,19 @@ sealed class ReduceStep {
 }
 
 /** The full reduction of one ledger: the raw debts, the minimal plan, and the
- *  ordered steps that morph one into the other (all Absorb steps, then all
- *  Settle steps). */
+ *  ordered steps that morph one into the other. Steps run in three phases:
+ *  Build (one per debt, the graph fills up) → Absorb (one per debt, the graph
+ *  nets into balances) → Settle (the greedy payments). */
 class DebtReduction(
     val people: List<Person>,
     val direct: List<DirectDebt>,
     val settlements: List<Settlement>,
     val steps: List<ReduceStep>,
 ) {
-    /** steps[0 until absorbCount] are Absorb; the rest are Settle. */
-    val absorbCount: Int get() = direct.size
+    val buildCount: Int get() = direct.size          // phase 1 length (debts appear)
+    val pruneCount: Int get() = direct.size          // phase 2 length (debts net away)
+    val buildEnd: Int get() = buildCount             // cursor when the graph is full
+    val pruneEnd: Int get() = buildCount + pruneCount // cursor when only balances remain
 
     /** Net balances after `cursor` steps (cursor 0 = the all-zero start). */
     fun balancesAt(cursor: Int): Map<Person, Long> =
@@ -76,8 +86,12 @@ fun directDebts(expenses: List<Expense>): List<DirectDebt> {
 fun buildReduction(people: List<Person>, expenses: List<Expense>): DebtReduction {
     val direct = directDebts(expenses)
     val steps = mutableListOf<ReduceStep>()
+    val zero: Map<Person, Long> = people.associateWith { 0L }
 
-    // Act 1 — absorb each raw debt into the running net balances.
+    // Phase 1 (Enchendo) — reveal each debt as an edge; balances stay zero.
+    for (d in direct) steps.add(ReduceStep.Build(d, zero))
+
+    // Phase 2 (Podando) — absorb each raw debt into the running net balances.
     val running = LinkedHashMap<Person, Long>().apply { people.forEach { put(it, 0L) } }
     for (d in direct) {
         running.merge(d.from, -d.amountCents, Long::plus)
@@ -85,8 +99,8 @@ fun buildReduction(people: List<Person>, expenses: List<Expense>): DebtReduction
         steps.add(ReduceStep.Absorb(d, LinkedHashMap(running)))
     }
 
-    // Act 2 — greedy settle on the net balances. Same rule (and the same
-    // value-then-id tie-break) as Ledger.settlements(), so the plans agree.
+    // Phase 3 (Acerto) — greedy settle on the net balances. Same rule (and the
+    // same value-then-id tie-break) as Ledger.settlements(), so the plans agree.
     val bal = LinkedHashMap(running)
     val settlements = mutableListOf<Settlement>()
     while (true) {
