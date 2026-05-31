@@ -135,7 +135,7 @@ class SplitwiseActivity : ComponentActivity() {
                     onBackground = TXT, onSurface = TXT,
                 ),
             ) {
-                Surface(color = BG) { Box(Modifier.safeDrawingPadding()) { SplitScreen() } }
+                Surface(color = BG) { Box(Modifier.safeDrawingPadding()) { SplitScreen(); AutoCloseDisableOverlay() } }
             }
         }
     }
@@ -614,7 +614,7 @@ private fun DebtGraph(
                     .graphicsLayer { scaleX = scale; scaleY = scale; translationX = pan.x; translationY = pan.y }
                     .pointerInput(Unit) {
                         detectTransformGestures { _, panChange, zoom, _ ->
-                            scale = (scale * zoom).coerceIn(1f, 5f)
+                            scale = (scale * zoom).coerceIn(0.7f, 5f)   // 0.7 = 30% smaller than fit
                             pan = if (scale <= 1.01f) Offset.Zero else pan + panChange
                         }
                     }

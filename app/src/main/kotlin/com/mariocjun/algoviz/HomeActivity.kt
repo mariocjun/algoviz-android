@@ -84,7 +84,7 @@ class HomeActivity : ComponentActivity() {
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
                 Surface(color = MaterialTheme.colorScheme.background) {
-                    Box(Modifier.safeDrawingPadding()) { HomeScreen() }
+                    Box(Modifier.safeDrawingPadding()) { HomeScreen(); AutoCloseDisableOverlay() }
                 }
             }
         }

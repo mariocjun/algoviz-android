@@ -139,7 +139,7 @@ class SchedActivity : ComponentActivity() {
                 ),
             ) {
                 Surface(color = INK_BG) {
-                    Box(Modifier.safeDrawingPadding()) { SchedScreen() }
+                    Box(Modifier.safeDrawingPadding()) { SchedScreen(); AutoCloseDisableOverlay() }
                 }
             }
         }
