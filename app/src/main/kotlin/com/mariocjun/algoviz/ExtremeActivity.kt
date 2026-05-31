@@ -53,6 +53,8 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.VolumeOff
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -116,6 +118,7 @@ class ExtremeActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        VizBridge.nativeInit()   // ensure the shared AAudio synth exists (idempotent)
         setContent {
             MaterialTheme(
                 colorScheme = darkColorScheme(
@@ -129,6 +132,9 @@ class ExtremeActivity : ComponentActivity() {
             }
         }
     }
+
+    override fun onResume() { super.onResume(); VizBridge.nativeAudioResume() }
+    override fun onPause() { VizBridge.nativeAudioPause(); super.onPause() }
 }
 
 @Composable
@@ -146,6 +152,7 @@ private fun ExtremeScreen(onExit: () -> Unit) {
     // people (Cássia +, Mário −) land adjacent at the top and their final arc reads.
     val netBal = remember { r.balancesAt(absorb) }
     val order = remember { people.sortedByDescending { netBal[it] ?: 0L } }
+    val ringIndex = remember(order) { order.withIndex().associate { (i, name) -> name to i } }
     val colorOf: (String) -> Color =
         remember { { name -> PERSON_HUES[(people.indexOf(name).coerceAtLeast(0)) % PERSON_HUES.size] } }
 
@@ -153,6 +160,7 @@ private fun ExtremeScreen(onExit: () -> Unit) {
     var playing by remember { mutableStateOf(true) }
     var spsIdx by remember { mutableIntStateOf(DEFAULT_SPS) }
     var rainbow by remember { mutableStateOf(false) }
+    var sound by remember { mutableStateOf(true) }
     var scale by remember { mutableFloatStateOf(1f) }
     var pan by remember { mutableStateOf(Offset.Zero) }
 
@@ -188,7 +196,19 @@ private fun ExtremeScreen(onExit: () -> Unit) {
         val isSettle = nc > absorb
         strike(isSettle || nc == total)
         if (manual || isSettle || nc == total) haptic()
+        // ASMR: a pentatonic note per absorbed debt (pitch follows the creditor's
+        // place on the ring), a celebratory chord on the settlement. Forward only.
+        if (advancing && sound) {
+            if (isSettle) VizBridge.nativeCelebrate()
+            else (r.steps[nc - 1] as? ReduceStep.Absorb)?.let {
+                VizBridge.nativePlayNote((ringIndex[it.edge.to] ?: 0).toFloat() / order.size)
+            }
+        }
     }
+
+    // Audio: consonant pentatonic synth, soft volume; mute follows the toggle.
+    LaunchedEffect(Unit) { VizBridge.nativeSetScale(0); VizBridge.nativeSetVolume(0.55f) }
+    LaunchedEffect(sound) { VizBridge.nativeSetSound(sound) }
 
     // Auto-advance on a fixed step interval while playing.
     LaunchedEffect(playing, spsIdx) {
@@ -252,7 +272,9 @@ private fun ExtremeScreen(onExit: () -> Unit) {
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
+                    GlassIcon(if (sound) Icons.Filled.VolumeUp else Icons.Filled.VolumeOff,
+                        if (sound) "Som ligado" else "Som desligado", { sound = !sound }, Modifier)
                     GlassIcon(Icons.Filled.Close, "Voltar", onExit, Modifier)
                 }
                 Spacer(Modifier.weight(1f))
@@ -268,7 +290,11 @@ private fun ExtremeScreen(onExit: () -> Unit) {
         Box(Modifier.fillMaxSize().background(EX_BG)) {
             graph(Modifier.fillMaxSize())
             status(Modifier.align(Alignment.TopStart).padding(12.dp))
-            GlassIcon(Icons.Filled.Close, "Voltar", onExit, Modifier.align(Alignment.TopEnd).padding(12.dp))
+            Row(Modifier.align(Alignment.TopEnd).padding(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                GlassIcon(if (sound) Icons.Filled.VolumeUp else Icons.Filled.VolumeOff,
+                    if (sound) "Som ligado" else "Som desligado", { sound = !sound }, Modifier)
+                GlassIcon(Icons.Filled.Close, "Voltar", onExit, Modifier)
+            }
             if (done) PayoffBanner(hue, pulse, Modifier.align(Alignment.Center))
             Column(
                 Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(12.dp)
