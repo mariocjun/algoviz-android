@@ -135,7 +135,7 @@ class SplitwiseActivity : ComponentActivity() {
                     onBackground = TXT, onSurface = TXT,
                 ),
             ) {
-                Surface(color = BG) { Box(Modifier.safeDrawingPadding()) { SplitScreen(); AutoCloseDisableOverlay() } }
+                Surface(color = BG) { AutoCloseGuard { Box(Modifier.safeDrawingPadding()) { SplitScreen() } } }
             }
         }
     }
@@ -179,6 +179,15 @@ private fun SplitScreen() {
     var tab by remember { mutableIntStateOf(0) }
     val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
 
+    // Easter-egg loader: swap the ledger for the extreme 20-owe-20 demo (41 direct
+    // debts → 1 payment: Mário deve R$67,00 a Cássia) and jump to the Grafo tab.
+    val loadExtreme: () -> Unit = {
+        val (dp, de) = extremeDemo()
+        people.clear(); people.addAll(dp)
+        expenses.clear(); expenses.addAll(de)
+        tab = 2
+    }
+
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         Spacer(Modifier.height(if (landscape) 4.dp else 8.dp))
         Text("Racha",
@@ -205,7 +214,7 @@ private fun SplitScreen() {
                 SettlementsSection(settlements, colorOf)
                 Spacer(Modifier.height(16.dp))
             }
-            else -> DebtGraph(people, expenses.toList(), settlements, colorOf, Modifier.fillMaxSize())
+            else -> DebtGraph(people, expenses.toList(), settlements, colorOf, Modifier.fillMaxSize(), onExample = loadExtreme)
         }
     }
 }
@@ -570,7 +579,7 @@ private fun PrimaryWide(label: String, color: Color, onClick: () -> Unit) {
 @Composable
 private fun DebtGraph(
     people: List<String>, expenses: List<Expense>, settlements: List<Settlement>,
-    colorOf: (String) -> Color, modifier: Modifier = Modifier,
+    colorOf: (String) -> Color, modifier: Modifier = Modifier, onExample: () -> Unit = {},
 ) {
     val measurer = rememberTextMeasurer()
     // Direct debts (the "before"): each non-payer owes their Equal share to the payer.
@@ -651,7 +660,7 @@ private fun DebtGraph(
                 for (st in settlements) {
                     val pu = pos[st.from] ?: continue
                     val pv = pos[st.to] ?: continue
-                    drawDebtEdge(measurer, pu, pv, st.amountCents, p, colorOf(st.from), nodeR, maxAmt, edgeMax, center, curve, label = !many)
+                    drawDebtEdge(measurer, pu, pv, st.amountCents, p, colorOf(st.from), nodeR, maxAmt, edgeMax, center, curve, label = settlements.size <= 6)
                 }
                 for (name in order) {
                     val pp = pos[name] ?: continue
@@ -677,6 +686,12 @@ private fun DebtGraph(
             Spacer(Modifier.width(6.dp))
             Pill("${settlements.size} pagam.", OWED)
         }
+        // easter-egg: load the extreme 20-owe-20 example (41 debts → 1 payment)
+        Box(
+            Modifier.align(Alignment.TopEnd).padding(12.dp)
+                .clip(RoundedCornerShape(50)).background(PANEL_HI).clickable { onExample() }
+                .padding(horizontal = 12.dp, vertical = 7.dp),
+        ) { Text("✨ exemplo", color = TXT_DIM, style = MaterialTheme.typography.labelMedium) }
         // floating toggle (bottom-center)
         Row(
             Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp)
@@ -747,4 +762,23 @@ private fun DrawScope.drawDebtEdge(
             cornerRadius = CornerRadius(7f, 7f), style = Stroke(1f))
         drawText(measurer, money(amt), topLeft = Offset(lx - m.size.width / 2f, ly - m.size.height / 2f), style = style)
     }
+}
+
+/** The extreme demo: 20 people in two debt rings that fully cancel + one cross
+ *  debt, so 41 direct debts (20 owe 20) collapse to a SINGLE payment —
+ *  Mário deve R$67,00 a Cássia. Script-verified. */
+private fun extremeDemo(): Pair<List<String>, List<Expense>> {
+    val p = listOf(
+        "Mário", "Cássia", "Bia", "Caio", "Duda", "Ana", "Beto", "Lia", "Téo", "Rafa",
+        "Nina", "Gus", "Lara", "Ivo", "Sofia", "João", "Manu", "Léo", "Cleo", "Vini",
+    )
+    val ex = buildList {
+        for (i in 0 until 20) {
+            add(Expense(p[i], 2000, SplitMode.Equal(listOf(p[i], p[(i + 1) % 20])), "anel"))
+            add(Expense(p[i], 2000, SplitMode.Equal(listOf(p[i], p[(i + 2) % 20])), "anel2"))
+        }
+        // Cássia pays R$134 for {Cássia, Mário} → each owes R$67 → net: Mário owes Cássia R$67.
+        add(Expense("Cássia", 13400, SplitMode.Equal(listOf("Cássia", "Mário")), "viagem"))
+    }
+    return p to ex
 }

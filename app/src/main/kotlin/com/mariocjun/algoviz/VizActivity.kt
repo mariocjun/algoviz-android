@@ -147,7 +147,7 @@ class VizActivity : ComponentActivity() {
                 // Background bleeds edge-to-edge; the content is inset by the
                 // system bars (status/navigation) so no control sits under them.
                 Surface(color = MaterialTheme.colorScheme.background) {
-                    Box(Modifier.safeDrawingPadding()) { VizScreen(); AutoCloseDisableOverlay() }
+                    AutoCloseGuard { Box(Modifier.safeDrawingPadding()) { VizScreen() } }
                 }
             }
         }
