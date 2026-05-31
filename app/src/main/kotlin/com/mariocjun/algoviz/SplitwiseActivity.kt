@@ -27,6 +27,8 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -76,6 +78,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.TextMeasurer
@@ -590,11 +594,33 @@ private fun DebtGraph(
     val bob by rememberInfiniteTransition(label = "bob").animateFloat(
         0f, (2.0 * PI).toFloat(), infiniteRepeatable(tween(3800), RepeatMode.Restart), label = "bobv")
 
+    // pinch-to-zoom + pan (double-tap resets); the ring auto-fits, controls scale by count
+    var scale by remember { mutableStateOf(1f) }
+    var pan by remember { mutableStateOf(Offset.Zero) }
+    val many = people.size > 8
+    // Lay nodes out around the ring by net balance (creditors clustered together),
+    // so the minimal plan reads like a chord diagram instead of a random tangle.
+    val bal = HashMap<String, Long>().apply {
+        for (s in settlements) { merge(s.to, s.amountCents, Long::plus); merge(s.from, -s.amountCents, Long::plus) }
+    }
+    val order = people.sortedByDescending { bal[it] ?: 0L }
+
     // The graph IS the content: it fills the whole tab; the headline + toggle float
     // on top so chrome never out-sizes the content (esp. in landscape).
     Box(modifier) {
         Surface(color = PANEL, shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxSize()) {
-            Canvas(Modifier.fillMaxSize().padding(16.dp)) {
+            Canvas(
+                Modifier.fillMaxSize()
+                    .graphicsLayer { scaleX = scale; scaleY = scale; translationX = pan.x; translationY = pan.y }
+                    .pointerInput(Unit) {
+                        detectTransformGestures { _, panChange, zoom, _ ->
+                            scale = (scale * zoom).coerceIn(1f, 5f)
+                            pan = if (scale <= 1.01f) Offset.Zero else pan + panChange
+                        }
+                    }
+                    .pointerInput(Unit) { detectTapGestures(onDoubleTap = { scale = 1f; pan = Offset.Zero }) }
+                    .padding(16.dp),
+            ) {
                 val n = people.size
                 if (n == 0) return@Canvas
                 val topInset = 70f; val bottomInset = 104f         // clear the floating headline + toggle
@@ -602,36 +628,44 @@ private fun DebtGraph(
                 val cy = (topInset + (size.height - bottomInset)) / 2f
                 val rx = (size.width / 2f - 52f).coerceAtLeast(10f)
                 val ry = ((size.height - topInset - bottomInset) / 2f - 6f).coerceAtLeast(10f)
-                val nodeR = 21f
+                // nodes / fonts / edges shrink as the group grows so 20 people still fit
+                val nodeR = when { n <= 6 -> 21f; n <= 10 -> 17f; n <= 16 -> 13f; else -> 10f }
+                val initFont = (nodeR * 0.62f).coerceAtLeast(7f)
+                val edgeMax = if (many) 5f else 7f
+                val center = Offset(cx, cy)
+                val curve = if (many) 0.34f else 0f                 // bow chords inward when dense
                 val pos = HashMap<String, Offset>(n)
-                people.forEachIndexed { i, name ->
+                order.forEachIndexed { i, name ->
                     val a = -PI / 2.0 + i * 2.0 * PI / n
                     val bobY = sin(bob + i.toFloat()) * 4f          // gentle life on the nodes
                     pos[name] = Offset(cx + (rx * cos(a)).toFloat(), cy + (ry * sin(a)).toFloat() + bobY)
                 }
-                // Direto = the tangle (arrows only, no labels); Simplificado = clean
-                // arrows WITH amount chips. A label never sits bare on a line.
+                // Direto = the tangle (arrows only); Simplificado = clean arrows, with
+                // amount chips only when the group is small enough to stay readable.
+                val directAlpha = (1f - p) * if (many) 0.5f else 0.85f
                 for ((pair, amt) in direct) {
                     val pu = pos[pair.first] ?: continue
                     val pv = pos[pair.second] ?: continue
-                    drawDebtEdge(measurer, pu, pv, amt, (1f - p) * 0.85f, colorOf(pair.first), nodeR, maxAmt, label = false)
+                    drawDebtEdge(measurer, pu, pv, amt, directAlpha, colorOf(pair.first), nodeR, maxAmt, edgeMax, center, curve, label = false)
                 }
                 for (st in settlements) {
                     val pu = pos[st.from] ?: continue
                     val pv = pos[st.to] ?: continue
-                    drawDebtEdge(measurer, pu, pv, st.amountCents, p, colorOf(st.from), nodeR, maxAmt, label = true)
+                    drawDebtEdge(measurer, pu, pv, st.amountCents, p, colorOf(st.from), nodeR, maxAmt, edgeMax, center, curve, label = !many)
                 }
-                for (name in people) {
+                for (name in order) {
                     val pp = pos[name] ?: continue
                     drawCircle(colorOf(name), radius = nodeR, center = pp)
-                    val ist = TextStyle(color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    val ist = TextStyle(color = Color.White, fontSize = initFont.sp, fontWeight = FontWeight.Bold)
                     val im = measurer.measure(initials(name), ist)
                     drawText(measurer, initials(name),
                         topLeft = Offset(pp.x - im.size.width / 2f, pp.y - im.size.height / 2f), style = ist)
-                    val nst = TextStyle(color = TXT, fontSize = 10.sp)
-                    val nm = measurer.measure(name, nst)
-                    drawText(measurer, name,
-                        topLeft = Offset(pp.x - nm.size.width / 2f, pp.y + nodeR + 3f), style = nst)
+                    if (!many) {
+                        val nst = TextStyle(color = TXT, fontSize = 10.sp)
+                        val nm = measurer.measure(name, nst)
+                        drawText(measurer, name,
+                            topLeft = Offset(pp.x - nm.size.width / 2f, pp.y + nodeR + 3f), style = nst)
+                    }
                 }
             }
         }
@@ -652,6 +686,11 @@ private fun DebtGraph(
             GraphToggle("Direto", !simplified) { simplified = false }
             GraphToggle("Simplificado", simplified) { simplified = true }
         }
+        if (many) Text(
+            "pince p/ zoom · 2 toques reseta", color = TXT_DIM,
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.align(Alignment.BottomStart).padding(12.dp),
+        )
     }
 }
 
@@ -671,32 +710,41 @@ private fun GraphToggle(label: String, on: Boolean, modifier: Modifier = Modifie
  *  (~62% toward the creditor) so it never reads as text sitting on a line. */
 private fun DrawScope.drawDebtEdge(
     measurer: TextMeasurer, pu: Offset, pv: Offset, amt: Long, alpha: Float, col: Color,
-    nodeR: Float, maxAmt: Long, label: Boolean,
+    nodeR: Float, maxAmt: Long, edgeMax: Float, center: Offset, curve: Float, label: Boolean,
 ) {
     if (alpha <= 0.02f) return
     val dx = pv.x - pu.x; val dy = pv.y - pu.y
     val len = hypot(dx, dy); if (len < 1f) return
     val ux = dx / len; val uy = dy / len
     val s = Offset(pu.x + ux * nodeR, pu.y + uy * nodeR)
-    val e = Offset(pv.x - ux * (nodeR + 11f), pv.y - uy * (nodeR + 11f))
-    val th = (2.5f + 7f * (amt.toFloat() / maxAmt)).coerceIn(2f, 10f)
-    drawLine(col.copy(alpha = alpha), s, e, strokeWidth = th)
-    val ah = 12f; val px = -uy; val py = ux
-    val b1 = Offset(e.x - ux * ah + px * ah * 0.55f, e.y - uy * ah + py * ah * 0.55f)
-    val b2 = Offset(e.x - ux * ah - px * ah * 0.55f, e.y - uy * ah - py * ah * 0.55f)
+    val gap = nodeR * 0.5f + 4f
+    val e = Offset(pv.x - ux * (nodeR + gap), pv.y - uy * (nodeR + gap))
+    val th = (1.5f + edgeMax * (amt.toFloat() / maxAmt)).coerceIn(1.5f, edgeMax + 2f)
+    // quadratic bézier whose control point is the midpoint pulled toward the centre
+    // by `curve` (curve = 0 → a straight line).
+    val mx = (s.x + e.x) / 2f; val my = (s.y + e.y) / 2f
+    val cpx = mx + (center.x - mx) * curve; val cpy = my + (center.y - my) * curve
+    drawPath(Path().apply { moveTo(s.x, s.y); quadraticBezierTo(cpx, cpy, e.x, e.y) },
+        col.copy(alpha = alpha), style = Stroke(th))
+    // arrowhead along the curve's tangent at the end
+    var adx = e.x - cpx; var ady = e.y - cpy
+    val al = hypot(adx, ady); if (al > 0.01f) { adx /= al; ady /= al } else { adx = ux; ady = uy }
+    val ah = (nodeR * 0.55f).coerceIn(6f, 12f); val px = -ady; val py = adx
+    val b1 = Offset(e.x - adx * ah + px * ah * 0.55f, e.y - ady * ah + py * ah * 0.55f)
+    val b2 = Offset(e.x - adx * ah - px * ah * 0.55f, e.y - ady * ah - py * ah * 0.55f)
     drawPath(Path().apply { moveTo(e.x, e.y); lineTo(b1.x, b1.y); lineTo(b2.x, b2.y); close() },
         col.copy(alpha = alpha))
     if (label && alpha > 0.5f) {
         val t = 0.62f
-        val mx = s.x + (e.x - s.x) * t + px * 11f
-        val my = s.y + (e.y - s.y) * t + py * 11f
+        val lx = s.x + (e.x - s.x) * t + px * 11f
+        val ly = s.y + (e.y - s.y) * t + py * 11f
         val style = TextStyle(color = col, fontSize = 11.sp, fontWeight = FontWeight.Bold)
         val m = measurer.measure(money(amt), style)
         val cw = m.size.width + 12f; val ch = m.size.height + 6f
-        val tl = Offset(mx - cw / 2f, my - ch / 2f)
+        val tl = Offset(lx - cw / 2f, ly - ch / 2f)
         drawRoundRect(BG.copy(alpha = 0.92f), topLeft = tl, size = Size(cw, ch), cornerRadius = CornerRadius(7f, 7f))
         drawRoundRect(col.copy(alpha = 0.45f), topLeft = tl, size = Size(cw, ch),
             cornerRadius = CornerRadius(7f, 7f), style = Stroke(1f))
-        drawText(measurer, money(amt), topLeft = Offset(mx - m.size.width / 2f, my - m.size.height / 2f), style = style)
+        drawText(measurer, money(amt), topLeft = Offset(lx - m.size.width / 2f, ly - m.size.height / 2f), style = style)
     }
 }
