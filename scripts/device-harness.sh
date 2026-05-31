@@ -247,8 +247,10 @@ ui_test() {
     adbx install -r "$(cygpath -w "$apk" 2>/dev/null || echo "$apk")" >/dev/null
     ensure_root  # so we can read/clear the app's external files dir
     asroot "rm -f $FILES/hwcaps-*.json $FILES/benchmarks-*.json" 2>/dev/null || true
-    echo "ui-test: launch MainActivity"
-    adbx shell am start -W -n "$PKG/.MainActivity" >/dev/null
+    echo "ui-test: launch HomeActivity (launcher) then open the Profiler tile"
+    adbx shell am start -W -n "$PKG/.HomeActivity" >/dev/null
+    sleep 2
+    ui_tap tile_profiler || { echo "  FAIL: tile_profiler not found (HomeActivity launcher)"; return 1; }
     sleep 2
 
     echo "ui-test: tap btn_hwcaps"

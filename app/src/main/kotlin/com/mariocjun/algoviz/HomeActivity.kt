@@ -38,6 +38,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
@@ -46,6 +48,7 @@ private data class Tile(
     val subtitle: String,
     val icon: ImageVector,
     val target: Class<*>,
+    val testId: String,        // content-desc locator for UI automation
 )
 
 // Single source of truth for the launcher list. Adding a new mini-app =
@@ -56,28 +59,39 @@ private val TILES = listOf(
         subtitle = "8 sort algorithms, race mode, ASMR audio",
         icon = Icons.AutoMirrored.Filled.Sort,
         target = VizActivity::class.java,
+        testId = "tile_sort",
     ),
     Tile(
         title = "Scheduler trainer",
         subtitle = "CPU/task scheduler — Maziero reference",
         icon = Icons.Filled.Schedule,
         target = SchedActivity::class.java,
+        testId = "tile_sched",
     ),
     Tile(
         title = "Racha",
         subtitle = "divide a conta, simplifica as dívidas",
         icon = Icons.Filled.Groups,
         target = SplitwiseActivity::class.java,
+        testId = "tile_racha",
     ),
     Tile(
         title = "Profiler",
         subtitle = "CPU benchmarks, sensors, HW caps",
         icon = Icons.Filled.Speed,
         target = MainActivity::class.java,
+        testId = "tile_profiler",
     ),
 )
 
 class HomeActivity : ComponentActivity() {
+    companion object {
+        // HomeActivity is the launcher now; loading the native lib here makes
+        // JNI_OnLoad fire on app start (the smoke test asserts that log line,
+        // and the old launcher — MainActivity — is no longer exported).
+        init { System.loadLibrary("algoviz") }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -124,7 +138,7 @@ private fun HomeScreen() {
 private fun TileCard(t: Tile, onClick: () -> Unit) {
     Card(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().semantics { contentDescription = t.testId },
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant,
         ),

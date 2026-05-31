@@ -11,10 +11,11 @@ set -euo pipefail
 
 APK_PATH="${APK_PATH:-app/build/outputs/apk/debug/app-debug.apk}"
 PACKAGE="${PACKAGE:-com.mariocjun.algoviz}"
-ACTIVITY="${ACTIVITY:-com.mariocjun.algoviz.MainActivity}"
+ACTIVITY="${ACTIVITY:-com.mariocjun.algoviz.HomeActivity}"
 LOG_TAG="${LOG_TAG:-AlgoViz}"
-# JNI_OnLoad fires from MainActivity's static initialiser
-# (System.loadLibrary("algoviz")) as soon as the class is loaded.
+# JNI_OnLoad fires from HomeActivity's static initialiser
+# (System.loadLibrary("algoviz")) as soon as the launcher class is loaded.
+# (HomeActivity is the launcher; MainActivity is now exported=false.)
 EXPECT_LOG="${EXPECT_LOG:-JNI_OnLoad: libalgoviz.so ready}"
 WAIT_SECONDS="${WAIT_SECONDS:-8}"
 
