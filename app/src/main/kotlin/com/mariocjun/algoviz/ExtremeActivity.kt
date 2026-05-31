@@ -48,6 +48,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
@@ -101,13 +102,15 @@ import kotlin.math.sin
 import kotlinx.coroutines.launch
 
 // ---- Cinematic palette (darker / higher-contrast than the Racha tab) ----------
-private val EX_BG = Color(0xFF0A0A0D)
-private val EX_TXT = Color(0xFFF3F3F6)
-private val EX_DIM = Color(0xFF9A9AA4)
-private val EX_OWED = Color(0xFF3DCF7A)   // creditor — green
-private val EX_OWES = Color(0xFFFF5C50)   // debtor — coral
-private val EX_BLUE = Color(0xFF4296FA)
-private val GLASS = Color(0xFF15151B)     // translucent panel base
+// internal so the tutorial sheet (ExtremeTutorial.kt) shares the exact look.
+internal val EX_BG = Color(0xFF0A0A0D)
+internal val EX_TXT = Color(0xFFF3F3F6)
+internal val EX_DIM = Color(0xFF9A9AA4)
+internal val EX_OWED = Color(0xFF3DCF7A)   // creditor — green
+internal val EX_OWES = Color(0xFFFF5C50)   // debtor — coral
+internal val EX_BLUE = Color(0xFF4296FA)
+internal val EX_GOLD = Color(0xFFE8B62E)   // coins
+internal val GLASS = Color(0xFF15151B)     // translucent panel base
 
 // Steps per second. Spans the slow end (½, 1) the owner likes through 8/16.
 private val SPS_LABELS = arrayOf("½", "1", "2", "4", "8", "16")
@@ -163,6 +166,7 @@ private fun ExtremeScreen(onExit: () -> Unit) {
     var rainbow by remember { mutableStateOf(false) }
     var sound by remember { mutableStateOf(true) }
     var heldAtFull by remember { mutableStateOf(false) }   // one auto-pause on the full graph
+    var showTutorial by remember { mutableStateOf(!ExtremeTutorial.dismissed) }  // intro auto-opens once/session
     var scale by remember { mutableFloatStateOf(1f) }
     var pan by remember { mutableStateOf(Offset.Zero) }
 
@@ -214,9 +218,10 @@ private fun ExtremeScreen(onExit: () -> Unit) {
     LaunchedEffect(Unit) { VizBridge.nativeSetScale(0); VizBridge.nativeSetVolume(0.55f) }
     LaunchedEffect(sound) { VizBridge.nativeSetSound(sound) }
 
-    // Auto-advance on a fixed step interval while playing.
-    LaunchedEffect(playing, spsIdx) {
-        if (!playing) return@LaunchedEffect
+    // Auto-advance on a fixed step interval while playing (paused while the
+    // tutorial is up, so the animation waits behind it).
+    LaunchedEffect(playing, spsIdx, showTutorial) {
+        if (!playing || showTutorial) return@LaunchedEffect
         while (cursor < total) {
             kotlinx.coroutines.delay(SPS_MS[spsIdx])
             if (!playing) break
@@ -266,6 +271,7 @@ private fun ExtremeScreen(onExit: () -> Unit) {
         )
     }
 
+    Box(Modifier.fillMaxSize()) {
     if (landscape) {
         Row(Modifier.fillMaxSize().background(EX_BG)) {
             Box(Modifier.weight(1f).fillMaxHeight()) {
@@ -279,6 +285,7 @@ private fun ExtremeScreen(onExit: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
+                    GlassIcon(Icons.Filled.Info, "Como funciona", { showTutorial = true }, Modifier)
                     GlassIcon(if (sound) Icons.Filled.VolumeUp else Icons.Filled.VolumeOff,
                         if (sound) "Som ligado" else "Som desligado", { sound = !sound }, Modifier)
                     GlassIcon(Icons.Filled.Close, "Voltar", onExit, Modifier)
@@ -297,6 +304,7 @@ private fun ExtremeScreen(onExit: () -> Unit) {
             graph(Modifier.fillMaxSize())
             status(Modifier.align(Alignment.TopStart).padding(12.dp))
             Row(Modifier.align(Alignment.TopEnd).padding(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                GlassIcon(Icons.Filled.Info, "Como funciona", { showTutorial = true }, Modifier)
                 GlassIcon(if (sound) Icons.Filled.VolumeUp else Icons.Filled.VolumeOff,
                     if (sound) "Som ligado" else "Som desligado", { sound = !sound }, Modifier)
                 GlassIcon(Icons.Filled.Close, "Voltar", onExit, Modifier)
@@ -315,6 +323,8 @@ private fun ExtremeScreen(onExit: () -> Unit) {
                 }
             }
         }
+    }
+        if (showTutorial) TutorialSheet { dont -> if (dont) ExtremeTutorial.dismissed = true; showTutorial = false }
     }
 }
 
