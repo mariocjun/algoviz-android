@@ -66,10 +66,12 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -116,6 +118,10 @@ internal val GLASS = Color(0xFF15151B)     // translucent panel base
 private val SPS_LABELS = arrayOf("½", "1", "2", "4", "8", "16")
 private val SPS_MS = longArrayOf(2000, 1000, 500, 250, 125, 62)
 private const val DEFAULT_SPS = 4         // 8 steps/sec (190 absorbs is a lot at 4)
+
+/** A short-lived floating label that rises off an edge: who owes whom (red),
+ *  a cancellation (gold), a receipt (green). Purely visual feedback. */
+private class Floater(val a: String, val b: String, val text: String, val color: Color, var age: Float = 0f)
 
 class ExtremeActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -167,6 +173,7 @@ private fun ExtremeScreen(onExit: () -> Unit) {
     var sound by remember { mutableStateOf(true) }
     var heldAtFull by remember { mutableStateOf(false) }   // one auto-pause on the full graph
     var showTutorial by remember { mutableStateOf(!ExtremeTutorial.dismissed) }  // intro auto-opens once/session
+    val floaters = remember { mutableStateListOf<Floater>() }   // rising who-owes-whom / cancela / recebe pops
     var scale by remember { mutableFloatStateOf(1f) }
     var pan by remember { mutableStateOf(Offset.Zero) }
 
@@ -202,15 +209,32 @@ private fun ExtremeScreen(onExit: () -> Unit) {
         val isSettle = nc > pruneEnd
         strike(isSettle || nc == total)
         if (manual || isSettle || nc == total) haptic()
-        // ASMR: a pentatonic note as each debt appears (Build) or nets away
-        // (Absorb) — pitch follows the creditor's place on the ring — and a
-        // celebratory chord on the settlement. Forward only.
-        if (advancing && sound) {
+        // Floating pops (visual, regardless of mute) + ASMR note. Forward only.
+        // Build → "A→B" in red (a debt appears). Absorb that shrinks the total
+        // imbalance → "cancela" in gold (the satisfying part). Settle → "recebe"
+        // in green. A pentatonic note tracks each touched edge; chord on settle.
+        if (advancing) {
             when (val st = r.steps[nc - 1]) {
-                is ReduceStep.Settle -> VizBridge.nativeCelebrate()
-                is ReduceStep.Build -> VizBridge.nativePlayNote((ringIndex[st.edge.to] ?: 0).toFloat() / order.size)
-                is ReduceStep.Absorb -> VizBridge.nativePlayNote((ringIndex[st.edge.to] ?: 0).toFloat() / order.size)
+                is ReduceStep.Build -> {
+                    floaters.add(Floater(st.edge.from, st.edge.to, "${initials(st.edge.from)}→${initials(st.edge.to)}", EX_OWES))
+                    if (sound) VizBridge.nativePlayNote((ringIndex[st.edge.to] ?: 0).toFloat() / order.size)
+                }
+                is ReduceStep.Absorb -> {
+                    val before = r.balancesAt(nc - 1); val after = r.balancesAt(nc); val d = st.edge
+                    val delta = (kotlin.math.abs(after[d.from] ?: 0L) + kotlin.math.abs(after[d.to] ?: 0L)) -
+                                (kotlin.math.abs(before[d.from] ?: 0L) + kotlin.math.abs(before[d.to] ?: 0L))
+                    // gold "cancela" when the debt shrinks the imbalance, else the
+                    // plain red who-owes-whom — so the prune always has life.
+                    if (delta < 0L) floaters.add(Floater(d.from, d.to, "cancela", EX_GOLD))
+                    else floaters.add(Floater(d.from, d.to, "${initials(d.from)}→${initials(d.to)}", EX_OWES))
+                    if (sound) VizBridge.nativePlayNote((ringIndex[d.to] ?: 0).toFloat() / order.size)
+                }
+                is ReduceStep.Settle -> {
+                    floaters.add(Floater(st.from, st.to, "recebe ${money(st.amountCents)}", EX_OWED))
+                    if (sound) VizBridge.nativeCelebrate()
+                }
             }
+            while (floaters.size > 16) floaters.removeAt(0)
         }
     }
 
@@ -230,6 +254,21 @@ private fun ExtremeScreen(onExit: () -> Unit) {
             if (cursor == buildEnd && !heldAtFull) { heldAtFull = true; playing = false; break }
         }
         playing = false
+    }
+
+    // Age + cull the floating pops (rise ~1s then fade out).
+    LaunchedEffect(Unit) {
+        var last = 0L
+        while (true) {
+            withFrameNanos { now ->
+                val dt = if (last == 0L) 0.016f else ((now - last) / 1_000_000_000f).coerceAtMost(0.05f)
+                last = now
+                if (floaters.isNotEmpty()) {
+                    for (f in floaters) f.age += dt
+                    floaters.removeAll { it.age > 1.05f }
+                }
+            }
+        }
     }
 
     var topGuardPx by remember { mutableFloatStateOf(0f) }
@@ -259,7 +298,7 @@ private fun ExtremeScreen(onExit: () -> Unit) {
             drawReductionFrame(
                 r, order, colorOf, cursor, measurer,
                 bob, pulse, hue, rainbow, edgeFlash.value, screenFlash.value,
-                topGuardPx, if (landscape) 0f else botGuardPx,
+                topGuardPx, if (landscape) 0f else botGuardPx, floaters,
             )
         }
     }
@@ -335,6 +374,7 @@ private fun DrawScope.drawReductionFrame(
     cursor: Int, measurer: TextMeasurer,
     bob: Float, pulse: Float, hue: Float, rainbow: Boolean,
     edgeFlash: Float, screenFlash: Float, topGuardPx: Float, botGuardPx: Float,
+    floaters: List<Floater>,
 ) {
     val n = order.size
     if (n == 0) return
@@ -429,6 +469,21 @@ private fun DrawScope.drawReductionFrame(
             val bm = measurer.measure(txt, bs)
             drawText(measurer, txt, topLeft = Offset(pp.x - bm.size.width / 2f, pp.y + nodeR + 2f), style = bs)
         }
+    }
+
+    // 4.5) Floating pops rising off their edge: who owes whom (red), cancellations
+    // (gold), the receipt (green) — the life the prune phase was missing.
+    for (f in floaters) {
+        val pu = pos[f.a] ?: continue; val pv = pos[f.b] ?: continue
+        val a = (1f - f.age / 1.05f).coerceIn(0f, 1f)
+        val mx = (pu.x + pv.x) / 2f; val my = (pu.y + pv.y) / 2f - f.age * 50f
+        val style = TextStyle(color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        val m = measurer.measure(f.text, style)
+        val cw = m.size.width + 12f; val ch = m.size.height + 6f
+        val tl = Offset(mx - cw / 2f, my - ch / 2f)
+        drawRoundRect(f.color.copy(alpha = 0.92f * a), topLeft = tl, size = Size(cw, ch), cornerRadius = CornerRadius(7f, 7f))
+        drawText(measurer, f.text, topLeft = Offset(mx - m.size.width / 2f, my - m.size.height / 2f),
+            style = style.copy(color = Color.White.copy(alpha = a)))
     }
 
     // 5) Full-screen lightning flash (settle / payoff).
