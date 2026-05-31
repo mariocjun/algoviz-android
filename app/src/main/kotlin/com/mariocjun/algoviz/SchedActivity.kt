@@ -42,14 +42,18 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FastForward
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SkipNext
@@ -86,7 +90,9 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -225,6 +231,7 @@ private fun SchedScreen() {
     var currentT by remember { mutableIntStateOf(0) }
     var playing by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var showInfo by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val view = LocalView.current
 
@@ -273,7 +280,7 @@ private fun SchedScreen() {
     val onReset: () -> Unit = { playing = false; currentT = 0 }
 
     val chart: @Composable (Modifier) -> Unit = { m ->
-        GanttBoard(r, currentT, cellPop.value, flash.value, m)
+        GanttBoard(r, currentT, cellPop.value, flash.value, { showInfo = true }, m)
     }
     val controls: @Composable (Boolean) -> Unit = { rail ->
         AlgoChips(algoNames, algoIdx, accent) { i -> algoIdx = i; scope.launch { load(i) } }
@@ -316,6 +323,8 @@ private fun SchedScreen() {
             Spacer(Modifier.height(10.dp))
         }
     }
+
+    if (showInfo) HeuristicDialog(algoIdx) { showInfo = false }
 }
 
 @Composable
@@ -381,7 +390,7 @@ private fun StatusStrip(r: SchedResult, t: Int, accent: Color) {
 // ---- The Gantt board (the hero) ----------------------------------------------
 
 @Composable
-private fun GanttBoard(r: SchedResult, currentT: Int, pop: Float, flash: Float, modifier: Modifier = Modifier) {
+private fun GanttBoard(r: SchedResult, currentT: Int, pop: Float, flash: Float, onInfo: () -> Unit, modifier: Modifier = Modifier) {
     val measurer = rememberTextMeasurer()
     val tasks = remember(r) { r.tasks.sortedBy { it.id } }
     val n = tasks.size.coerceAtLeast(1)
@@ -394,6 +403,7 @@ private fun GanttBoard(r: SchedResult, currentT: Int, pop: Float, flash: Float, 
     )
 
     Surface(color = INK_PANEL, shape = RoundedCornerShape(20.dp), modifier = modifier) {
+      Box(Modifier.fillMaxSize()) {
         Canvas(Modifier.fillMaxSize().padding(10.dp)) {
             val total = r.totalTime.coerceAtLeast(1)
             val labelW = 26.dp.toPx()
@@ -494,6 +504,13 @@ private fun GanttBoard(r: SchedResult, currentT: Int, pop: Float, flash: Float, 
                     topLeft = Offset(0f, 0f), size = size, cornerRadius = cr(12f))
             }
         }
+        // ℹ in the empty top-right corner → opens the didactic heuristic card
+        Box(
+            Modifier.align(Alignment.TopEnd).padding(8.dp).size(32.dp)
+                .clip(RoundedCornerShape(50)).background(INK_PANEL_HI).clickable { onInfo() },
+            contentAlignment = Alignment.Center,
+        ) { Icon(Icons.Filled.Info, contentDescription = "Como funciona", tint = INK_TEXT_DIM, modifier = Modifier.size(18.dp)) }
+      }
     }
 }
 
@@ -612,4 +629,177 @@ private fun GhostButton(
             .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier),
         contentAlignment = Alignment.Center,
     ) { Icon(icon, contentDescription = desc, tint = INK_TEXT.copy(alpha = alpha)) }
+}
+
+// ---- Didactic heuristic explainer (the ℹ card) --------------------------------
+
+private enum class AnimMode { ARRIVAL, SIZE, PRIORITY, RR, AGING }
+
+private data class Heuristic(
+    val title: String, val pick: String, val body: String, val tradeoff: String,
+    val mode: AnimMode, val caption: String,
+)
+
+// Didactic, in Maziero's teaching spirit (faithful to Cap. 6; paraphrased).
+private fun heuristicFor(idx: Int): Heuristic = when (idx) {
+    1 -> Heuristic("Como o SJF decide", "Entre as prontas, pega a de menor duração.",
+        "Cooperativo: a escolhida roda até o fim. É o que dá o menor tempo médio de espera.",
+        "Exige estimar a duração antes; tarefas longas podem ficar pra trás (inanição).",
+        AnimMode.SIZE, "menor duração primeiro")
+    2 -> Heuristic("Como o RR decide", "Pega a próxima da fila e roda por um quantum.",
+        "Revezamento com preempção por tempo: se não termina no quantum, volta pro fim da fila e dá a vez a outra.",
+        "Ótima resposta (interativo); quantum menor = mais resposta, porém mais trocas de contexto.",
+        AnimMode.RR, "revezamento por quantum")
+    3 -> Heuristic("Como o SRTF decide", "Pega a de menor tempo restante.",
+        "SJF preemptivo: se chega uma tarefa mais curta que o que falta da atual, ela toma o processador na hora.",
+        "Os melhores tempos médios de todos; em troca, mais preempções.",
+        AnimMode.SIZE, "menor tempo restante")
+    4 -> Heuristic("Como o PRIOc decide", "Entre as prontas, pega a de maior prioridade.",
+        "Escala positiva: número maior = mais prioritária. Cooperativo — roda até o fim.",
+        "Prioridade alta passa na frente; baixa prioridade espera.",
+        AnimMode.PRIORITY, "maior prioridade")
+    5 -> Heuristic("Como o PRIOp decide", "Maior prioridade — mas preemptivo.",
+        "Como o PRIOc, porém se chega alguém mais prioritário que a atual, toma o processador na hora.",
+        "Resposta rápida pros urgentes; baixa prioridade pode passar fome.",
+        AnimMode.PRIORITY, "maior prioridade (preempta)")
+    6 -> Heuristic("Como o PRIOd decide", "Maior prioridade dinâmica, com envelhecimento.",
+        "Prioridade preemptiva, mas quem espera ganha prioridade aos poucos (envelhece, +α por turno) pra não morrer de fome; ao rodar, rejuvenesce pra prioridade base.",
+        "Mais justo: divide proporcional à prioridade base, sem inanição.",
+        AnimMode.AGING, "prioridade + envelhecimento (+α)")
+    else -> Heuristic("Como o FCFS decide", "Pega a que chegou primeiro.",
+        "É a fila do banco: o primeiro a chegar é o primeiro servido, e roda até terminar — cooperativo, sem interrupção.",
+        "Justo na ordem; mas uma tarefa longa na frente faz todas esperarem (efeito comboio).",
+        AnimMode.ARRIVAL, "ordem de chegada")
+}
+
+@Composable
+private fun HeuristicDialog(algoIdx: Int, onDismiss: () -> Unit) {
+    val h = heuristicFor(algoIdx)
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(color = INK_PANEL, shape = RoundedCornerShape(24.dp)) {
+            Column(
+                Modifier.padding(20.dp).widthIn(max = 460.dp)
+                    .heightIn(max = 580.dp).verticalScroll(rememberScrollState()),
+            ) {
+                Text(h.title, color = INK_TEXT, fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.titleLarge)
+                Spacer(Modifier.height(14.dp))
+                HeuristicAnim(h)
+                Spacer(Modifier.height(8.dp))
+                Text(h.caption, color = ACCENT, fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth(),
+                    style = MaterialTheme.typography.labelLarge)
+                Spacer(Modifier.height(16.dp))
+                InfoLabel("Escolhe")
+                Text(h.pick, color = INK_TEXT, fontWeight = FontWeight.Medium,
+                    style = MaterialTheme.typography.bodyLarge)
+                Spacer(Modifier.height(12.dp))
+                Text(h.body, color = INK_TEXT_DIM, style = MaterialTheme.typography.bodyMedium)
+                Spacer(Modifier.height(12.dp))
+                InfoLabel("Trade-off")
+                Text(h.tradeoff, color = INK_TEXT_DIM, style = MaterialTheme.typography.bodyMedium)
+                Spacer(Modifier.height(18.dp))
+                Box(
+                    Modifier.fillMaxWidth().height(50.dp).clip(RoundedCornerShape(14.dp))
+                        .background(ACCENT).clickable { onDismiss() },
+                    contentAlignment = Alignment.Center,
+                ) { Text("Entendi", color = Color.White, fontWeight = FontWeight.SemiBold) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun InfoLabel(t: String) {
+    Text(t.uppercase(), color = ACCENT, fontWeight = FontWeight.Bold,
+        style = MaterialTheme.typography.labelMedium)
+    Spacer(Modifier.height(3.dp))
+}
+
+/** A small looping diagram: the ready queue, the chosen task highlighted by the
+ *  algorithm's rule, and an arrow into the CPU. Purely illustrative. */
+@Composable
+private fun HeuristicAnim(h: Heuristic) {
+    val measurer = rememberTextMeasurer()
+    val pulse by rememberInfiniteTransition(label = "heur").animateFloat(
+        0f, 1f, infiniteRepeatable(tween(1400), RepeatMode.Reverse), label = "p",
+    )
+    val sizes = floatArrayOf(0.62f, 0.38f, 0.95f)   // durations (SIZE mode)
+    val prios = intArrayOf(2, 5, 3)                  // priorities (PRIORITY/AGING)
+    val chosen = when (h.mode) {
+        AnimMode.SIZE -> 1                            // shortest
+        AnimMode.PRIORITY, AnimMode.AGING -> 1        // highest (5)
+        else -> 0                                     // first in line
+    }
+    Surface(color = INK_BG, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+        Canvas(Modifier.fillMaxWidth().height(150.dp).padding(12.dp)) {
+            val w = size.width; val hgt = size.height
+            val slot = w / 3f
+            val boxW = slot * 0.6f
+            val maxBoxH = hgt * 0.42f
+            val qBottom = hgt - 20f
+            val cpuW = slot * 0.6f; val cpuH = maxBoxH * 0.6f
+            val cpuX = w / 2f - cpuW / 2f; val cpuY = 0f
+            fun boxH(i: Int) = if (h.mode == AnimMode.SIZE) maxBoxH * sizes[i] else maxBoxH * 0.7f
+
+            // CPU slot
+            drawRoundRect(INK_PANEL_HI, Offset(cpuX, cpuY), Size(cpuW, cpuH), cr(8f))
+            drawRoundRect(ACCENT.copy(alpha = 0.25f + 0.55f * pulse), Offset(cpuX, cpuY),
+                Size(cpuW, cpuH), cr(8f), style = Stroke(2f))
+            val cpuStyle = TextStyle(color = INK_TEXT_DIM, fontSize = 11.sp)
+            val cpuLbl = measurer.measure("CPU", cpuStyle)
+            drawText(measurer, "CPU",
+                topLeft = Offset(w / 2f - cpuLbl.size.width / 2f, cpuY + cpuH / 2f - cpuLbl.size.height / 2f),
+                style = cpuStyle)
+
+            // candidate boxes (the ready queue)
+            for (i in 0 until 3) {
+                val bh = boxH(i)
+                val bx = i * slot + (slot - boxW) / 2f
+                val by = qBottom - bh
+                val isCh = i == chosen
+                drawRoundRect(if (isCh) ACCENT.copy(alpha = 0.85f) else INK_PANEL_HI,
+                    Offset(bx, by), Size(boxW, bh), cr(6f))
+                if (isCh) drawRoundRect(ACCENT.copy(alpha = 0.4f + 0.6f * pulse),
+                    Offset(bx - 2f, by - 2f), Size(boxW + 4f, bh + 4f), cr(8f), style = Stroke(2.5f))
+                when (h.mode) {
+                    AnimMode.PRIORITY, AnimMode.AGING -> {
+                        val s = TextStyle(color = if (isCh) Color.White else INK_TEXT,
+                            fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                        val m = measurer.measure(prios[i].toString(), s)
+                        drawText(measurer, prios[i].toString(),
+                            topLeft = Offset(bx + boxW / 2f - m.size.width / 2f, by + bh / 2f - m.size.height / 2f), style = s)
+                        if (h.mode == AnimMode.AGING && !isCh) {
+                            val a = TextStyle(color = ARRIVAL_GREEN.copy(alpha = 0.35f + 0.6f * pulse), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            drawText(measurer, "↑+α", topLeft = Offset(bx + boxW / 2f - 13f, by - 17f), style = a)
+                        }
+                    }
+                    AnimMode.ARRIVAL -> {
+                        val s = TextStyle(color = INK_TEXT_DIM, fontSize = 10.sp)
+                        drawText(measurer, "${i + 1}º", topLeft = Offset(bx + boxW / 2f - 7f, qBottom + 3f), style = s)
+                    }
+                    else -> {}
+                }
+            }
+
+            // arrow: chosen box → CPU (pulsing)
+            val chX = chosen * slot + slot / 2f
+            val aCol = ACCENT.copy(alpha = 0.5f + 0.5f * pulse)
+            drawLine(aCol, Offset(chX, qBottom - boxH(chosen)), Offset(w / 2f, cpuY + cpuH + 5f), strokeWidth = 2.5f)
+            val ah = Path().apply {
+                moveTo(w / 2f, cpuY + cpuH); lineTo(w / 2f - 5f, cpuY + cpuH + 10f); lineTo(w / 2f + 5f, cpuY + cpuH + 10f); close()
+            }
+            drawPath(ah, aCol)
+
+            // RR only: a faint "↻ volta" return hint to the back of the queue
+            if (h.mode == AnimMode.RR) {
+                val rCol = INK_TEXT_DIM.copy(alpha = 0.35f + 0.4f * pulse)
+                drawLine(rCol, Offset(cpuX + cpuW, cpuY + cpuH / 2f),
+                    Offset(2 * slot + slot / 2f, qBottom - boxH(2)), strokeWidth = 1.6f)
+                val rs = TextStyle(color = rCol, fontSize = 10.sp)
+                val rl = measurer.measure("↻ volta", rs)
+                drawText(measurer, "↻ volta", topLeft = Offset(w - rl.size.width, cpuY), style = rs)
+            }
+        }
+    }
 }
