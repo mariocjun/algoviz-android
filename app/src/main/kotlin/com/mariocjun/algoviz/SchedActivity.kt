@@ -1,39 +1,60 @@
-// SchedActivity — v1 UI for the CPU/task-scheduler mini-app.
+// SchedActivity — the CPU/task-scheduler trainer (v1, pre-game).
 //
-// Runs the Maziero reference workload through one of the 7 algorithms (hardcoded
-// configs live in sched/sched_bridge.cpp) and renders the result: per-tick Gantt
-// chart on a Compose Canvas, final-metrics summary, and a per-task timing table.
-// No workload editor and no "predict the next task" mini-game yet — those are
-// intentionally deferred until the brainstorm pass.
+// This is a native-Compose replica of the owner's ImGui scheduler app
+// (mariocjun/simulador_sistema_operacional_maziero): a per-task-lane Gantt where
+// coloured blocks are CPU execution, with arrival (▶) and termination (■) event
+// markers and a live red playhead; transport controls step the simulation
+// forward/back, run-to-complete, and reset; ready tasks "light up". The whole
+// simulation is computed once by SchedBridge (the validated sched/sim.h engine),
+// and the playhead just scrubs that precomputed history — so stepping never
+// touches the engine. Dark, app-native; NOT a textbook panel.
+//
+// Conventions (semantics from Maziero Cap. 6, look from the owner's app):
+//   - lanes stacked t1 at the BOTTOM → tN at the top;
+//   - a coloured cell at time t = that task held the CPU during tick [t, t+1);
+//   - ▶ green = arrival instant, ■ red = termination instant;
+//   - a task READY (arrived, not running, not finished) at the playhead glows.
 package com.mariocjun.algoviz
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FilterChip
+import androidx.compose.material.icons.filled.FastForward
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -49,37 +70,81 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.util.Locale
+
+// ---- Palette (sampled from the owner's ImGui "modern style" + the book) -------
+
+private val INK_BG = Color(0xFF161618)        // app background
+private val INK_PANEL = Color(0xFF202023)     // raised panel
+private val INK_PANEL_HI = Color(0xFF2A2A2E)  // hovered/active panel
+private val INK_LINE = Color(0xFF3A3A40)       // hairlines
+private val INK_TEXT = Color(0xFFF2F2F4)
+private val INK_TEXT_DIM = Color(0xFF9A9AA2)
+private val ACCENT = Color(0xFF4296FA)         // his accent_blue
+private val ARRIVAL_GREEN = Color(0xFF3ECF6E)
+private val FINISH_RED = Color(0xFFF2554B)
+
+// Per-task colours (book/owner palette): t1 blue … t5 red, then extensions.
+private val TASK_COLORS = listOf(
+    Color(0xFF3E7BFA), Color(0xFFE4C23B), Color(0xFF9B5DE5),
+    Color(0xFF3DCf7A), Color(0xFFF2554B), Color(0xFFE08A2E),
+    Color(0xFF2BB6C4), Color(0xFFE05299),
+)
+private fun taskColor(id: Int): Color = TASK_COLORS[((id - 1).coerceAtLeast(0)) % TASK_COLORS.size]
+
+// Per-algorithm accent (his renderFrame system_color, brightened for dark UI).
+private val ALGO_ACCENT = listOf(
+    Color(0xFF3E7BFA), // FCFS
+    Color(0xFF36B9B9), // SJF
+    Color(0xFF9B5DE5), // RR
+    Color(0xFF35C46B), // SRTF
+    Color(0xFFE0902E), // PRIOc
+    Color(0xFFE8B62E), // PRIOp
+    Color(0xFFE05A50), // PRIOd
+)
+private fun algoAccent(idx: Int): Color = ALGO_ACCENT.getOrElse(idx) { ACCENT }
 
 class SchedActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            MaterialTheme(colorScheme = darkColorScheme()) {
-                Surface(color = MaterialTheme.colorScheme.background) {
+            MaterialTheme(
+                colorScheme = darkColorScheme(
+                    background = INK_BG, surface = INK_PANEL,
+                    primary = ACCENT, onPrimary = Color.White,
+                    onBackground = INK_TEXT, onSurface = INK_TEXT,
+                ),
+            ) {
+                Surface(color = INK_BG) {
                     Box(Modifier.safeDrawingPadding()) { SchedScreen() }
                 }
             }
         }
     }
 }
+
+// ---- Model (parsed from the SchedBridge JSON) ---------------------------------
 
 private data class TaskRow(
     val id: Int, val name: String,
@@ -88,13 +153,13 @@ private data class TaskRow(
     val turnaround: Int, val waiting: Int, val response: Int,
 )
 
-private data class GanttCell(val time: Int, val taskId: Int)
-
 private data class SchedResult(
     val algo: String, val quantum: Int, val totalTime: Int,
     val preemptions: Int, val contextSwitches: Int,
     val avgTurnaround: Float, val avgWaiting: Float, val avgResponse: Float,
-    val tasks: List<TaskRow>, val gantt: List<GanttCell>,
+    val tasks: List<TaskRow>,
+    /** tick -> task id running on CPU0 (−1 = idle). Indexed [0, totalTime). */
+    val runAt: IntArray,
 )
 
 private fun parseResult(json: String): SchedResult {
@@ -104,361 +169,433 @@ private fun parseResult(json: String): SchedResult {
     for (i in 0 until tasksArr.length()) {
         val t = tasksArr.getJSONObject(i)
         tasks.add(TaskRow(
-            id = t.getInt("id"),
-            name = t.getString("name"),
-            arrival = t.getInt("arrival"),
-            duration = t.getInt("duration"),
-            priority = t.getInt("priority"),
-            start = t.getInt("start"),
-            finish = t.getInt("finish"),
-            turnaround = t.getInt("turnaround"),
-            waiting = t.getInt("waiting"),
-            response = t.getInt("response"),
+            id = t.getInt("id"), name = t.getString("name"),
+            arrival = t.getInt("arrival"), duration = t.getInt("duration"),
+            priority = t.getInt("priority"), start = t.getInt("start"),
+            finish = t.getInt("finish"), turnaround = t.getInt("turnaround"),
+            waiting = t.getInt("waiting"), response = t.getInt("response"),
         ))
     }
+    val total = o.getInt("total_time")
+    val runAt = IntArray(total) { -1 }
     val ganttArr = o.getJSONArray("gantt")
-    val gantt = ArrayList<GanttCell>(ganttArr.length())
     for (i in 0 until ganttArr.length()) {
         val g = ganttArr.getJSONObject(i)
-        gantt.add(GanttCell(time = g.getInt("time"), taskId = g.getInt("task_id")))
+        val time = g.getInt("time")
+        if (time in 0 until total) runAt[time] = g.getInt("task_id")
     }
     return SchedResult(
-        algo = o.getString("algo"),
-        quantum = o.getInt("quantum"),
-        totalTime = o.getInt("total_time"),
-        preemptions = o.getInt("preemptions"),
-        contextSwitches = o.getInt("context_switches"),
+        algo = o.getString("algo"), quantum = o.getInt("quantum"), totalTime = total,
+        preemptions = o.getInt("preemptions"), contextSwitches = o.getInt("context_switches"),
         avgTurnaround = o.getDouble("avg_turnaround").toFloat(),
         avgWaiting = o.getDouble("avg_waiting").toFloat(),
         avgResponse = o.getDouble("avg_response").toFloat(),
-        tasks = tasks,
-        gantt = gantt,
+        tasks = tasks, runAt = runAt,
     )
 }
 
-// Fixed per-task palette sampled from Maziero's Cap. 6 figures (6.2/6.4/6.5),
-// so the Gantt matches the textbook and the table swatches match the Gantt.
-// Tasks beyond 5 extend with further distinct hues. See
-// docs/maziero-scheduling-diagram.md.
-private val MAZIERO_COLORS = listOf(
-    Color(0xFF3169CF), // t1 blue
-    Color(0xFFD8D818), // t2 yellow
-    Color(0xFF9048C0), // t3 purple
-    Color(0xFF48D830), // t4 green
-    Color(0xFFDF313B), // t5 red
-    Color(0xFFE08A1E), // t6 orange
-    Color(0xFF1FB6B6), // t7 teal
-    Color(0xFFD83C9B), // t8 magenta
-)
+private enum class TaskPhase { NEW, READY, RUNNING, DONE }
 
-private fun taskColor(id: Int): Color =
-    MAZIERO_COLORS[((id - 1).coerceAtLeast(0)) % MAZIERO_COLORS.size]
+/** State of a task at playhead tick [t] (t in 0..total). */
+private fun phaseAt(task: TaskRow, runningId: Int, t: Int): TaskPhase = when {
+    task.finish <= t -> TaskPhase.DONE
+    task.arrival > t -> TaskPhase.NEW
+    task.id == runningId -> TaskPhase.RUNNING
+    else -> TaskPhase.READY
+}
 
 private fun fmt(f: Float): String = String.format(Locale.US, "%.2f", f)
+
+// ---- Screen -------------------------------------------------------------------
 
 @Composable
 private fun SchedScreen() {
     val algoNames = remember { runCatching { SchedBridge.nativeSchedListAlgos() }.getOrDefault(emptyArray()) }
     var algoIdx by remember { mutableIntStateOf(0) }
     var result by remember { mutableStateOf<SchedResult?>(null) }
-    var running by remember { mutableStateOf(false) }
+    var currentT by remember { mutableIntStateOf(0) }   // playhead tick, 0..total
+    var playing by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
-    // Auto-run the first algorithm on launch so the screen is never empty.
-    LaunchedEffect(Unit) {
-        running = true
+    suspend fun load(idx: Int) {
         val r = withContext(Dispatchers.Default) {
-            runCatching { parseResult(SchedBridge.nativeSchedRunMaziero(0)) }
+            runCatching { parseResult(SchedBridge.nativeSchedRunMaziero(idx)) }
         }
-        running = false
-        r.onSuccess { result = it; error = null }
+        r.onSuccess { result = it; currentT = 0; playing = false; error = null }
             .onFailure { error = it.message ?: it.javaClass.simpleName }
     }
 
-    Column(
-        Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Text(
-            "Scheduler trainer",
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.SemiBold,
-        )
-        Text(
-            "5-task Maziero workload (arr,dur,prio): " +
-                "t1(0,5,2)  t2(0,2,3)  t3(1,4,1)  t4(3,1,4)  t5(5,2,5)",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+    LaunchedEffect(Unit) { load(0) }
 
+    // Run-to-complete: advance the playhead tick-by-tick for a "playing" feel.
+    LaunchedEffect(playing, result) {
+        if (!playing) return@LaunchedEffect
+        val total = result?.totalTime ?: 0
+        while (playing && currentT < total) { delay(160); currentT++ }
+        playing = false
+    }
+
+    val accent by animateColorAsState(algoAccent(algoIdx), tween(350), label = "accent")
+
+    Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
+        Spacer(Modifier.height(8.dp))
+        Text("Escalonador", style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.SemiBold, color = INK_TEXT)
+        Spacer(Modifier.height(10.dp))
+
+        AlgoChips(algoNames, algoIdx, accent) { i ->
+            algoIdx = i
+            scope.launch { load(i) }
+        }
+        Spacer(Modifier.height(10.dp))
+
+        val r = result
+        if (error != null) {
+            Text("Erro: $error", color = FINISH_RED, style = MaterialTheme.typography.bodyMedium)
+        } else if (r != null) {
+            StatusStrip(r, currentT, accent)
+            Spacer(Modifier.height(10.dp))
+            Box(Modifier.fillMaxWidth().weight(1f)) {
+                GanttBoard(r, currentT)
+            }
+            Spacer(Modifier.height(10.dp))
+            TaskPills(r, currentT)
+            Spacer(Modifier.height(12.dp))
+            Transport(
+                accent = accent,
+                canBack = currentT > 0,
+                canFwd = currentT < r.totalTime,
+                playing = playing,
+                onBack = { playing = false; if (currentT > 0) currentT-- },
+                onFwd = { playing = false; if (currentT < r.totalTime) currentT++ },
+                onRun = { if (currentT >= r.totalTime) currentT = 0; playing = !playing },
+                onReset = { playing = false; currentT = 0 },
+            )
+            Spacer(Modifier.height(10.dp))
+        }
+    }
+}
+
+@Composable
+private fun AlgoChips(names: Array<String>, selected: Int, accent: Color, onPick: (Int) -> Unit) {
+    Row(
+        Modifier.horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        names.forEachIndexed { i, name ->
+            val on = i == selected
+            val bg by animateColorAsState(if (on) accent else INK_PANEL, tween(250), label = "chipbg")
+            Box(
+                Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(bg)
+                    .clickable { onPick(i) }
+                    .padding(horizontal = 16.dp, vertical = 9.dp),
+            ) {
+                Text(name, color = if (on) Color.White else INK_TEXT_DIM,
+                    fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
+                    style = MaterialTheme.typography.labelLarge)
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatusStrip(r: SchedResult, t: Int, accent: Color) {
+    val finished = t >= r.totalTime
+    val runningId = if (t < r.totalTime) r.runAt.getOrElse(t) { -1 } else -1
+    val runningName = r.tasks.firstOrNull { it.id == runningId }?.name
+    Surface(color = INK_PANEL, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
         Row(
-            Modifier.horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            algoNames.forEachIndexed { i, name ->
-                FilterChip(
-                    selected = i == algoIdx,
-                    onClick = { algoIdx = i },
-                    label = { Text(name) },
+            Column(Modifier.weight(1f)) {
+                Text("${r.algo} · quantum ${r.quantum}", color = INK_TEXT_DIM,
+                    style = MaterialTheme.typography.labelMedium)
+                Spacer(Modifier.height(2.dp))
+                if (finished) {
+                    Text("Concluído · Tt ${fmt(r.avgTurnaround)}  Tw ${fmt(r.avgWaiting)}  Tr ${fmt(r.avgResponse)}",
+                        color = INK_TEXT, fontWeight = FontWeight.Medium,
+                        style = MaterialTheme.typography.titleMedium)
+                } else {
+                    Text(
+                        if (runningName != null) "Executando $runningName" else "CPU ociosa",
+                        color = if (runningName != null) accent else INK_TEXT_DIM,
+                        fontWeight = FontWeight.SemiBold,
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                }
+            }
+            // Big clock: t / total
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text("$t", color = INK_TEXT, fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.headlineSmall)
+                Text(" / ${r.totalTime}", color = INK_TEXT_DIM,
+                    style = MaterialTheme.typography.titleMedium)
+            }
+        }
+    }
+}
+
+// ---- The Gantt board (the hero) ----------------------------------------------
+
+@Composable
+private fun GanttBoard(r: SchedResult, currentT: Int) {
+    val measurer = rememberTextMeasurer()
+    val tasks = remember(r) { r.tasks.sortedBy { it.id } }
+    val n = tasks.size.coerceAtLeast(1)
+
+    // Smoothly-animated playhead position + a gentle pulse for "ready" glow.
+    val animT by animateFloatAsState(
+        currentT.toFloat(),
+        spring(dampingRatio = 0.72f, stiffness = Spring.StiffnessMediumLow),
+        label = "playhead",
+    )
+    val pulse by rememberInfiniteTransition(label = "pulse").animateFloat(
+        0.35f, 1f, infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "glow",
+    )
+
+    Surface(color = INK_PANEL, shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth().fillMaxSize()) {
+        Canvas(Modifier.fillMaxSize().padding(14.dp)) {
+            val total = r.totalTime.coerceAtLeast(1)
+            val labelW = 30.dp.toPx()
+            val axisH = 20.dp.toPx()
+            val topPad = 6.dp.toPx()
+            val trail = 10.dp.toPx()
+            val plotW = size.width - labelW - trail
+            val plotH = size.height - axisH - topPad
+            val cw = plotW / total
+            val laneH = plotH / n
+            val barH = laneH * 0.52f
+            val left = labelW
+            val plotBottom = topPad + plotH
+
+            fun x(t: Float) = left + t * cw
+            fun laneTop(i: Int) = topPad + (n - 1 - i) * laneH      // t1 (i=0) at bottom
+            fun runningAt(t: Int) = if (t in 0 until total) r.runAt[t] else -1
+
+            // 1) time grid — stronger line every 5 ticks, labels at 0/5/10/last
+            val tickStyle = TextStyle(color = INK_TEXT_DIM, fontSize = 10.sp)
+            for (tk in 0..total) {
+                val gx = x(tk.toFloat())
+                val strong = tk % 5 == 0
+                drawLine(
+                    if (strong) INK_LINE else INK_LINE.copy(alpha = 0.45f),
+                    Offset(gx, topPad), Offset(gx, plotBottom), strokeWidth = 1f,
+                )
+                if (strong || tk == total) {
+                    val lbl = tk.toString()
+                    val m = measurer.measure(lbl, tickStyle)
+                    drawText(measurer, lbl,
+                        topLeft = Offset(gx - m.size.width / 2f, plotBottom + 4f), style = tickStyle)
+                }
+            }
+
+            // 2) lanes
+            tasks.forEachIndexed { i, task ->
+                val top = laneTop(i)
+                val barTop = top + (laneH - barH) / 2f
+                val col = taskColor(task.id)
+                val phase = phaseAt(task, runningAt(currentT), currentT)
+
+                // lane label (glows when the task is READY at the playhead)
+                val labelCol = when (phase) {
+                    TaskPhase.READY -> lerp(INK_TEXT_DIM, col, pulse)
+                    TaskPhase.RUNNING -> col
+                    TaskPhase.DONE -> INK_TEXT_DIM.copy(alpha = 0.6f)
+                    TaskPhase.NEW -> INK_TEXT_DIM.copy(alpha = 0.5f)
+                }
+                val nameStyle = TextStyle(color = labelCol, fontSize = 12.sp,
+                    fontWeight = if (phase == TaskPhase.RUNNING || phase == TaskPhase.READY) FontWeight.Bold else FontWeight.Normal)
+                val nm = measurer.measure(task.name, nameStyle)
+                drawText(measurer, task.name,
+                    topLeft = Offset(left - nm.size.width - 8f, barTop + barH / 2f - nm.size.height / 2f),
+                    style = nameStyle)
+
+                // faint "lifetime" track from arrival→finish; READY lanes light up
+                if (task.finish > task.arrival) {
+                    val trackAlpha = if (phase == TaskPhase.READY) 0.10f + 0.22f * pulse else 0.07f
+                    drawRoundRect(
+                        color = col.copy(alpha = trackAlpha),
+                        topLeft = Offset(x(task.arrival.toFloat()), barTop),
+                        size = Size((task.finish - task.arrival) * cw, barH),
+                        cornerRadius = radius(6f),
+                    )
+                }
+
+                // executed cells [0, currentT): solid colour, soft top highlight
+                var tk = task.arrival
+                while (tk < minOf(currentT, task.finish)) {
+                    if (runningAt(tk) == task.id) {
+                        drawCell(x(tk.toFloat()), barTop, cw, barH, col, glow = 0f)
+                    }
+                    tk++
+                }
+                // the cell at the playhead (currently executing) glows
+                if (currentT < total && runningAt(currentT) == task.id) {
+                    drawCell(x(currentT.toFloat()), barTop, cw, barH, col, glow = pulse)
+                }
+
+                // ▶ arrival marker (green) at the left edge of the lane
+                run {
+                    val ax = x(task.arrival.toFloat())
+                    val cy = barTop + barH / 2f
+                    val s = 5.dp.toPx()
+                    val p = androidx.compose.ui.graphics.Path().apply {
+                        moveTo(ax - 2f, cy - s); lineTo(ax - 2f, cy + s); lineTo(ax - 2f + s, cy); close()
+                    }
+                    drawPath(p, ARRIVAL_GREEN.copy(alpha = if (currentT >= task.arrival) 1f else 0.45f))
+                }
+                // ■ termination marker (red) once the playhead passes the finish
+                if (task.finish in 1..currentT) {
+                    val fx = x(task.finish.toFloat())
+                    val s = 4.dp.toPx()
+                    drawRect(FINISH_RED, topLeft = Offset(fx - s, barTop + barH - s), size = Size(2 * s, 2 * s))
+                }
+            }
+
+            // 3) playhead — glowing vertical line + head, springs between ticks
+            val px = x(animT)
+            drawRect(
+                brush = Brush.horizontalGradient(
+                    0f to Color.Transparent, 1f to ACCENT.copy(alpha = 0.16f),
+                    startX = px - 14f, endX = px,
+                ),
+                topLeft = Offset(px - 14f, topPad), size = Size(14f, plotH),
+            )
+            drawLine(ACCENT, Offset(px, topPad - 2f), Offset(px, plotBottom), strokeWidth = 2f)
+            val hp = androidx.compose.ui.graphics.Path().apply {
+                moveTo(px - 5f, topPad - 2f); lineTo(px + 5f, topPad - 2f); lineTo(px, topPad + 6f); close()
+            }
+            drawPath(hp, ACCENT)
+        }
+    }
+}
+
+private fun DrawScope.radius(dp: Float) =
+    androidx.compose.ui.geometry.CornerRadius(dp, dp)
+
+/** One execution cell: filled rounded rect + top highlight + optional glow ring. */
+private fun DrawScope.drawCell(x: Float, top: Float, cw: Float, h: Float, col: Color, glow: Float) {
+    val w = cw - 1.5f
+    val r = radius(4f)
+    if (glow > 0f) {
+        drawRoundRect(col.copy(alpha = 0.35f * glow),
+            topLeft = Offset(x - 3f, top - 3f), size = Size(w + 6f, h + 6f), cornerRadius = radius(6f))
+    }
+    drawRoundRect(col, topLeft = Offset(x, top), size = Size(w, h), cornerRadius = r, style = Fill)
+    // glossy top highlight
+    drawRoundRect(Color.White.copy(alpha = 0.18f),
+        topLeft = Offset(x, top), size = Size(w, h * 0.42f), cornerRadius = r)
+    drawRoundRect(Color.White.copy(alpha = 0.22f),
+        topLeft = Offset(x, top), size = Size(w, h), cornerRadius = r, style = Stroke(width = 1f))
+}
+
+// ---- Task pills (the "ready tasks light up" surface) --------------------------
+
+@Composable
+private fun TaskPills(r: SchedResult, currentT: Int) {
+    val pulse by rememberInfiniteTransition(label = "pillpulse").animateFloat(
+        0.4f, 1f, infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "pill",
+    )
+    val runningId = if (currentT < r.totalTime) r.runAt.getOrElse(currentT) { -1 } else -1
+    Row(
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        for (task in r.tasks.sortedBy { it.id }) {
+            val phase = phaseAt(task, runningId, currentT)
+            val col = taskColor(task.id)
+            val (bg, fg, ring) = when (phase) {
+                TaskPhase.RUNNING -> Triple(col, Color.White, col)
+                TaskPhase.READY -> Triple(col.copy(alpha = 0.12f + 0.20f * pulse), col, col.copy(alpha = pulse))
+                TaskPhase.DONE -> Triple(INK_PANEL, INK_TEXT_DIM.copy(alpha = 0.7f), Color.Transparent)
+                TaskPhase.NEW -> Triple(INK_PANEL, INK_TEXT_DIM.copy(alpha = 0.45f), Color.Transparent)
+            }
+            Box(
+                Modifier
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(bg)
+                    .then(
+                        if (ring != Color.Transparent)
+                            Modifier.border(1.5.dp, ring, RoundedCornerShape(12.dp)) else Modifier,
+                    )
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
+            ) {
+                Text(
+                    task.name + if (phase == TaskPhase.DONE) " ✓" else "",
+                    color = fg,
+                    fontWeight = if (phase == TaskPhase.RUNNING) FontWeight.Bold else FontWeight.Medium,
+                    style = MaterialTheme.typography.labelLarge,
                 )
             }
         }
-
-        Button(
-            onClick = {
-                running = true
-                error = null
-                scope.launch {
-                    val r = withContext(Dispatchers.Default) {
-                        runCatching { parseResult(SchedBridge.nativeSchedRunMaziero(algoIdx)) }
-                    }
-                    running = false
-                    r.onSuccess { result = it }
-                        .onFailure { error = it.message ?: it.javaClass.simpleName }
-                }
-            },
-            enabled = !running && algoNames.isNotEmpty(),
-        ) {
-            Icon(Icons.Filled.PlayArrow, contentDescription = null)
-            Spacer(Modifier.width(6.dp))
-            Text(if (running) "Running…" else "Run")
-        }
-
-        error?.let {
-            Text("Error: $it", color = MaterialTheme.colorScheme.error)
-        }
-
-        result?.let { ResultBlock(it) }
     }
 }
 
-@Composable
-private fun ResultBlock(r: SchedResult) {
-    MetricsCard(r)
-    Text("Diagrama de execução", style = MaterialTheme.typography.titleSmall)
-    GanttChart(r)
-    Text(
-        "Preenchido = executando · vazio = esperando (fila de prontas) · " +
-            "barra = chegada → término (largura = turnaround)",
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-    Text("Tasks", style = MaterialTheme.typography.titleSmall)
-    TaskTable(r.tasks)
-}
+// ---- Transport ----------------------------------------------------------------
 
 @Composable
-private fun MetricsCard(r: SchedResult) {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(
-                "${r.algo}  ·  quantum ${r.quantum}  ·  total ${r.totalTime}",
-                style = MaterialTheme.typography.titleMedium,
-            )
-            Text(
-                "Tt ${fmt(r.avgTurnaround)}   Tw ${fmt(r.avgWaiting)}   Tr ${fmt(r.avgResponse)}",
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            Text(
-                "context switches ${r.contextSwitches}   preemptions ${r.preemptions}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
-}
-
-// Maziero space-time diagram (Cap. 6, figs 6.2/6.4/6.5): one lane per task with
-// t1 at the BOTTOM; each task is a single bar spanning [arrival, finish]; inside
-// it, coloured = running on the CPU, hollow/white = ready-but-waiting. Drawn on a
-// near-white panel (like the book page) so the hollow encoding reads clearly.
-// See docs/maziero-scheduling-diagram.md.
-@Composable
-private fun GanttChart(r: SchedResult) {
-    val measurer = rememberTextMeasurer()
-    val total = r.totalTime.coerceAtLeast(1)
-    val tasks = r.tasks.sortedBy { it.id }          // t1..tN, ascending
-    val n = tasks.size.coerceAtLeast(1)
-
-    // Running ticks per task id, reconstructed from the gantt log. Every tick in
-    // [arrival, finish] that is NOT here is a waiting (hollow) tick.
-    val runningByTask = remember(r) {
-        val m = HashMap<Int, MutableSet<Int>>()
-        for (g in r.gantt) m.getOrPut(g.taskId) { HashSet() }.add(g.time)
-        m
-    }
-
-    val laneDp: Dp = 46.dp        // height of each task lane
-    val leftDp: Dp = 36.dp        // room for the y axis + tN labels
-    val axisDp: Dp = 28.dp        // room for x ticks + labels
-    val topDp: Dp = 12.dp
-    val trailDp: Dp = 22.dp       // room past the last tick for the x-axis arrow + 't'
-    val minCellDp: Dp = 22.dp     // floor on tick width before we start scrolling
-
-    val ink = Color(0xFF15161A)   // near-black axes / outlines
-    val grid = Color(0xFFB9BDC6)  // light dotted gridlines
-
-    Card(
-        colors = CardDefaults.cardColors(containerColor = Color(0xFFF7F8FB)),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        BoxWithConstraints(
-            Modifier
-                .fillMaxWidth()
-                .padding(8.dp),
-        ) {
-            // Fill the card width when the timeline is short; fall back to a
-            // legible minimum tick width + horizontal scroll when it is long.
-            val cellDp = maxOf(minCellDp, (maxWidth - leftDp - trailDp) / total)
-            val plotWidthDp = cellDp * total
-            val widthDp = leftDp + plotWidthDp + trailDp
-            val heightDp = topDp + laneDp * n + axisDp
-
-            Row(Modifier.horizontalScroll(rememberScrollState())) {
-                Canvas(Modifier.width(widthDp).height(heightDp)) {
-                val cw = plotWidthDp.toPx() / total
-                val left = leftDp.toPx()
-                val top = topDp.toPx()
-                val laneH = laneDp.toPx()
-                val barH = laneH * 0.58f
-                val plotBottom = top + laneH * n
-                val plotRight = left + cw * total
-
-                // Dotted vertical gridlines + bottom-axis ticks/labels at 0..total.
-                val dash = PathEffect.dashPathEffect(floatArrayOf(3f, 5f))
-                val tickStyle = TextStyle(color = ink, fontSize = 11.sp)
-                for (t in 0..total) {
-                    val x = left + t * cw
-                    drawLine(grid, Offset(x, top), Offset(x, plotBottom),
-                        strokeWidth = 1f, pathEffect = dash)
-                    drawLine(ink, Offset(x, plotBottom), Offset(x, plotBottom + 5f), strokeWidth = 1.5f)
-                    val lbl = t.toString()
-                    val mm = measurer.measure(lbl, tickStyle)
-                    drawText(measurer, lbl,
-                        topLeft = Offset(x - mm.size.width / 2f, plotBottom + 7f), style = tickStyle)
-                }
-
-                // Axes as arrows: Y up, X right with a trailing 't'.
-                drawLine(ink, Offset(left, plotBottom), Offset(left, top - 6f), strokeWidth = 2f)
-                drawLine(ink, Offset(left, top - 6f), Offset(left - 4f, top + 2f), strokeWidth = 2f)
-                drawLine(ink, Offset(left, top - 6f), Offset(left + 4f, top + 2f), strokeWidth = 2f)
-                drawLine(ink, Offset(left, plotBottom), Offset(plotRight + 16f, plotBottom), strokeWidth = 2f)
-                drawLine(ink, Offset(plotRight + 16f, plotBottom), Offset(plotRight + 8f, plotBottom - 4f), strokeWidth = 2f)
-                drawLine(ink, Offset(plotRight + 16f, plotBottom), Offset(plotRight + 8f, plotBottom + 4f), strokeWidth = 2f)
-                drawText(measurer, "t",
-                    topLeft = Offset(plotRight + 18f, plotBottom - 9f),
-                    style = TextStyle(color = ink, fontSize = 13.sp))
-
-                // Lanes — t1 at the bottom (index 0 -> bottom-most lane).
-                tasks.forEachIndexed { i, task ->
-                    val laneTop = top + (n - 1 - i) * laneH
-                    val barTop = laneTop + (laneH - barH) / 2f
-                    val nameStyle = TextStyle(color = ink, fontSize = 12.sp)
-                    val nm = measurer.measure(task.name, nameStyle)
-                    drawText(measurer, task.name,
-                        topLeft = Offset(left - nm.size.width - 8f, barTop + barH / 2f - nm.size.height / 2f),
-                        style = nameStyle)
-
-                    if (task.finish <= task.arrival) return@forEachIndexed
-                    val running = runningByTask[task.id] ?: emptySet()
-                    val col = taskColor(task.id)
-
-                    // Each contiguous run of executing ticks = one coloured, bordered
-                    // segment; the gaps between them stay hollow (= card background).
-                    var t = task.arrival
-                    while (t < task.finish) {
-                        if (t in running) {
-                            var e = t
-                            while (e < task.finish && e in running) e++
-                            val x = left + t * cw
-                            val w = (e - t) * cw
-                            drawRect(col, Offset(x, barTop), Size(w, barH))
-                            drawRect(ink, Offset(x, barTop), Size(w, barH), style = Stroke(width = 1.4f))
-                            t = e
-                        } else {
-                            t++
-                        }
-                    }
-                    // Outline the whole [arrival, finish] bar so the hollow waiting
-                    // region is clearly bounded.
-                    drawRect(ink,
-                        Offset(left + task.arrival * cw, barTop),
-                        Size((task.finish - task.arrival) * cw, barH),
-                        style = Stroke(width = 1.6f))
-                }
-            }     // Canvas
-        }         // Row
-        }         // BoxWithConstraints
-    }             // Card
-}
-
-@Composable
-private fun TaskTable(tasks: List<TaskRow>) {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            HeaderRow()
-            for (t in tasks) TaskBodyRow(t)
-        }
-    }
-}
-
-@Composable
-private fun HeaderRow() {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        Cell("id", weight = 0.7f, header = true)
-        Cell("arr", weight = 0.7f, header = true)
-        Cell("dur", weight = 0.7f, header = true)
-        Cell("prio", weight = 0.7f, header = true)
-        Cell("start", weight = 0.9f, header = true)
-        Cell("end", weight = 0.9f, header = true)
-        Cell("Tt", weight = 0.7f, header = true)
-        Cell("Tw", weight = 0.7f, header = true)
-        Cell("Tr", weight = 0.7f, header = true)
-    }
-}
-
-@Composable
-private fun TaskBodyRow(t: TaskRow) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        Row(Modifier.weight(0.7f), verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            Box(Modifier.size(10.dp)) {
-                Canvas(Modifier.fillMaxSize()) {
-                    drawRect(color = taskColor(t.id), size = size)
-                }
-            }
-            Text(t.name, style = MaterialTheme.typography.bodySmall)
-        }
-        Cell("${t.arrival}", 0.7f)
-        Cell("${t.duration}", 0.7f)
-        Cell("${t.priority}", 0.7f)
-        Cell("${t.start}", 0.9f)
-        Cell("${t.finish}", 0.9f)
-        Cell("${t.turnaround}", 0.7f)
-        Cell("${t.waiting}", 0.7f)
-        Cell("${t.response}", 0.7f)
-    }
-}
-
-@Composable
-private fun androidx.compose.foundation.layout.RowScope.Cell(
-    text: String, weight: Float, header: Boolean = false,
+private fun Transport(
+    accent: Color, canBack: Boolean, canFwd: Boolean, playing: Boolean,
+    onBack: () -> Unit, onFwd: () -> Unit, onRun: () -> Unit, onReset: () -> Unit,
 ) {
-    Text(
-        text,
-        style = if (header) MaterialTheme.typography.labelSmall else MaterialTheme.typography.bodySmall,
-        color = if (header) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
-        modifier = Modifier.weight(weight),
-    )
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        GhostButton(Icons.Filled.SkipPrevious, "Voltar passo", enabled = canBack, onClick = onBack,
+            modifier = Modifier.weight(1f))
+        // primary action: run / pause (run-to-complete animation)
+        PrimaryButton(
+            icon = if (playing) Icons.Filled.Pause else Icons.Filled.FastForward,
+            label = if (playing) "Pausar" else "Executar",
+            accent = accent, onClick = onRun, modifier = Modifier.weight(1.6f),
+        )
+        GhostButton(Icons.Filled.SkipNext, "Avançar passo", enabled = canFwd, onClick = onFwd,
+            modifier = Modifier.weight(1f))
+        GhostButton(Icons.Filled.Refresh, "Reiniciar", enabled = true, onClick = onReset,
+            modifier = Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun PrimaryButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector, label: String,
+    accent: Color, onClick: () -> Unit, modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier
+            .height(52.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(accent)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Icon(icon, contentDescription = label, tint = Color.White)
+            Text(label, color = Color.White, fontWeight = FontWeight.SemiBold)
+        }
+    }
+}
+
+@Composable
+private fun GhostButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector, desc: String,
+    enabled: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier,
+) {
+    val alpha = if (enabled) 1f else 0.32f
+    Box(
+        modifier
+            .height(52.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(INK_PANEL_HI.copy(alpha = alpha))
+            .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, contentDescription = desc, tint = INK_TEXT.copy(alpha = alpha))
+    }
 }

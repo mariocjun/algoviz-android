@@ -15,10 +15,31 @@ back.
 - **X axis = time**, integer ticks `0..total`. The axis is drawn as an arrow
   pointing right, with a `t` label past its end. Tick marks + integer labels sit
   below the axis. The Y axis is an arrow pointing up.
-- **Light background.** The chart is drawn on a near-white panel (like the book
-  page), even though the rest of the app is dark — this is what makes the
-  "empty = waiting" encoding legible. Axes, outlines and tick labels are black.
+- **Dark, app-native surface.** The chart lives on the app's dark panel, NOT a
+  white "textbook page" (an earlier white-panel rendition was rejected for
+  looking like a PDF pasted into the app). Grid hairlines, markers and the
+  playhead carry the structure on dark.
 - **Dotted vertical gridlines** at every integer time, spanning the plot height.
+
+## Shipped rendering (v1) — the owner's-app convention
+
+The live screen (`SchedActivity`) renders this as a replica of the owner's ImGui
+app, not as the book's printed hollow-bar figure. Same lanes + semantics, but:
+
+- **execution = a solid coloured cell** on each tick the task holds the CPU
+  (per-task colour, rounded, glossy top); the **faint colour track** behind the
+  lane spans arrival→finish, so the un-filled stretches read as *waiting* (the
+  book's hollow part, in dark form);
+- **▶ green = arrival**, **■ red = termination**, drawn as event markers on the
+  lane (the book's bar edges, made explicit);
+- a **spring-animated red/accent playhead** marks the current tick during
+  step-through; ready tasks (arrived, not running) **glow** ("acendem"), both on
+  the lane label and as pills below the chart;
+- transport: ◀ step back · ▶ step · ⏩ run-to-complete · 🔄 reset.
+
+The conceptual model below (hollow=waiting bar spanning arrival→finish) is the
+book's print form and the source of truth for *what the metrics mean*; the
+shipped renderer expresses the same thing in motion.
 
 ## Each task is ONE bar from arrival to completion, split into two states
 

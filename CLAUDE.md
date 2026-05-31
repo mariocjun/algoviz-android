@@ -92,6 +92,28 @@ cmake -S tests -B tests/build -G Ninja && cmake --build tests/build && ctest --t
 git tag v1.2.3 && git push origin v1.2.3
 ```
 
+## UX & design pipeline (MANDATORY before delivering any UI)
+
+This app is held to an **Apple-grade** design bar; treat UX like tests for code.
+Before delivering any UI/UX change:
+
+1. **Test the main flows physically on the device** — drive them with real
+   taps/gestures (`adb shell input`, `scripts/ui_tap.py`), don't build-and-assume.
+   Capture a **sequence of frames** (`adb exec-out screencap`) to inspect
+   transitions, not just end states. (Locating controls by content-desc via
+   `uiautomator dump` is more robust than guessing pixel coordinates.)
+2. **Run a critical UX review** of those frames — usability *and* time-retention
+   (does the eye land in the right place, does it feel alive, does it pull you in?)
+   — and fix what's weak before showing the owner.
+3. **Design bar = Apple polish:** science of proportions, clear visual hierarchy
+   (where to look), tap-target placement (where to click), minimalism, and motion
+   (spring physics, glow, depth). Material 3 skeleton + Apple-grade finish.
+4. **Never ship a screen foreign to the app.** Keep visuals native to the dark,
+   polished design language; render reference *semantics* (e.g. Maziero's
+   filled=running) in the app's own style, never as a screenshot of a book.
+5. **Replicate owner-provided references** (apps/mockups) faithfully — match their
+   interaction model and feel — then elevate.
+
 ## Architecture invariants & gotchas (don't relearn these the hard way)
 
 - **JNI⇄Kotlin package lockstep** — see above. `init-template.sh` is the only
