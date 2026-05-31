@@ -81,3 +81,17 @@ The bridge already emits everything needed:
 > chegada → término
 
 This keeps the pedagogy explicit, the same way the book's surrounding text does.
+
+## Textual basis (the encoding is the book's, verbatim)
+
+The filled/hollow convention is exactly how Maziero defines it in the FCFS
+section (Cap. 6, §6.4.1): *"Os quadros sombreados representam o uso do
+processador (observe que em cada instante apenas uma tarefa ocupa o
+processador). Os quadros brancos representam as tarefas que já ingressaram no
+sistema e estão aguardando o processador (tarefas prontas)."* — i.e. **shaded =
+running on the CPU, white = ready and waiting in the queue**. Our renderer is a
+direct transcription of that.
+
+The book draws this same diagram for every algorithm: figs 6.1 (FCFS), 6.2 (RR),
+6.4 (SJF), 6.5 (SRTF), 6.6 (PRIOc), 6.7 (PRIOp), 6.8 (PRIOd) — so the single
+renderer above is correct for all seven the trainer exposes.
