@@ -24,6 +24,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Sort
+import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.Schedule
@@ -90,6 +91,13 @@ private val TILES = listOf(
         icon = Icons.Filled.Hub,
         target = ExtremeActivity::class.java,
         testId = "tile_mincashflow",
+    ),
+    Tile(
+        title = "Códex",
+        subtitle = "documentação viva · qualidade ABNT NBR ISO/IEC 25010",
+        icon = Icons.Filled.Book,
+        target = DocsActivity::class.java,
+        testId = "tile_codex",
     ),
 )
 

@@ -2,9 +2,14 @@
 
 Guidance for Claude Code (and any AI agent) working in this repository.
 **This repo is a template** — a forkable C++/NDK Android base + on-device
-profiler. If you're an agent that just landed here, read this top-to-bottom
-once; it's the map. Cross-tool agents: see `AGENTS.md`. Invokable capabilities:
-`.claude/skills/`.
+profiler that has grown into a suite of **6 didactic mini-apps** (Sort
+visualizer, Scheduler trainer, Racha, Min Cash Flow, Profiler, Códex). If you're
+an agent that just landed here, read this top-to-bottom once; it's the map.
+Cross-tool agents: see `AGENTS.md`. Invokable capabilities: `.claude/skills/`.
+
+> **Quality & docs:** the project's living documentation and quality posture —
+> mapped to **ABNT NBR ISO/IEC 25010** — live IN-APP as the **Códex** mini-app
+> (`DocsActivity.kt`); that's the source of truth for the engineering backlog.
 
 > Everything down to "Physical device rig" is **generic** — true for any fork.
 > The section at the very bottom is environment-specific config; the real device
@@ -34,11 +39,16 @@ app/
   build.gradle.kts            AGP config: minSdk 29, compileSdk 34, NDK 26.1.10909125,
                               Kotlin, -std=c++23 via CMAKE_CXX_STANDARD
   src/main/
-    AndroidManifest.xml       MainActivity launcher, INTERNET perm (paste.rs upload)
-    kotlin/.../MainActivity.kt UI (programmatic, no XML): buttons w/ content-desc
-                              test IDs (btn_run, btn_hwcaps, btn_viz, ...) + paste.rs upload
-    kotlin/.../VizActivity.kt  native Jetpack Compose sort visualizer (Material 3 + Canvas)
-    kotlin/.../VizBridge.kt    JNI surface to the C++ viz engine + AAudio synth
+    AndroidManifest.xml       HomeActivity launcher; mini-app activities exported=false; INTERNET perm
+    kotlin/.../HomeActivity.kt launcher: 6 mini-app tiles (content-desc tile_*); loads libalgoviz
+    kotlin/.../MainActivity.kt  Profiler UI (programmatic): btn_run/btn_hwcaps/... + paste.rs upload
+    kotlin/.../VizActivity.kt   Sort visualizer (Compose + Canvas snapshot from C++); VizBridge.kt = JNI/AAudio
+    kotlin/.../SchedActivity.kt Scheduler trainer (Maziero swimlane Gantt; sched/sim.h golden-tested)
+    kotlin/.../Splitwise.kt + SplitwiseActivity.kt  Racha: Ledger (cents) + greedy settle + 3-tab UI
+    kotlin/.../DebtReduction.kt stepped reduction engine (host-tested) behind Min Cash Flow
+    kotlin/.../ExtremeActivity.kt + ExtremeTutorial.kt  "Min Cash Flow": 4-act 190→1 walkthrough + 3B1B intro
+    kotlin/.../DocsActivity.kt  "Códex": in-app docs + ABNT NBR ISO/IEC 25010 quality map (the source of truth)
+    kotlin/.../AlgovizApp.kt + AutoCloseOverlay.kt  Application + 39-min AutoCloseGuard (10-tap to disable)
     cpp/
       CMakeLists.txt          harden_target() = strict warnings + -O3 + LTO +
                               dead-code stripping; per-file -march for dot_int8/i8mm/sve2

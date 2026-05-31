@@ -52,10 +52,16 @@
             android:exported="false"
             android:configChanges="orientation|keyboardHidden|screenSize|screenLayout" />
 
-        <!-- "Extremo" — full-screen animated debt-reduction easter-egg. Not a
-             launcher tile; reached only from the Racha graph's ✨ chip. -->
+        <!-- "Extremo" / Min Cash Flow — full-screen animated debt-reduction. Also
+             reachable from the Racha graph's ✨ chip. -->
         <activity
             android:name=".ExtremeActivity"
+            android:exported="false"
+            android:configChanges="orientation|keyboardHidden|screenSize|screenLayout" />
+
+        <!-- "Códex" — the project documentation / quality model, as a mini-app. -->
+        <activity
+            android:name=".DocsActivity"
             android:exported="false"
             android:configChanges="orientation|keyboardHidden|screenSize|screenLayout" />
     </application>
