@@ -15,6 +15,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -51,6 +52,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
@@ -134,11 +136,23 @@ private fun parseResult(json: String): SchedResult {
     )
 }
 
-private fun taskColor(id: Int): Color {
-    // Distinct hue per task id — small workloads (≤8 tasks) stay legible.
-    val hue = ((id - 1) * 360f / 6f) % 360f
-    return Color.hsv(hue, 0.65f, 0.95f)
-}
+// Fixed per-task palette sampled from Maziero's Cap. 6 figures (6.2/6.4/6.5),
+// so the Gantt matches the textbook and the table swatches match the Gantt.
+// Tasks beyond 5 extend with further distinct hues. See
+// docs/maziero-scheduling-diagram.md.
+private val MAZIERO_COLORS = listOf(
+    Color(0xFF3169CF), // t1 blue
+    Color(0xFFD8D818), // t2 yellow
+    Color(0xFF9048C0), // t3 purple
+    Color(0xFF48D830), // t4 green
+    Color(0xFFDF313B), // t5 red
+    Color(0xFFE08A1E), // t6 orange
+    Color(0xFF1FB6B6), // t7 teal
+    Color(0xFFD83C9B), // t8 magenta
+)
+
+private fun taskColor(id: Int): Color =
+    MAZIERO_COLORS[((id - 1).coerceAtLeast(0)) % MAZIERO_COLORS.size]
 
 private fun fmt(f: Float): String = String.format(Locale.US, "%.2f", f)
 
@@ -225,8 +239,14 @@ private fun SchedScreen() {
 @Composable
 private fun ResultBlock(r: SchedResult) {
     MetricsCard(r)
-    Text("Gantt", style = MaterialTheme.typography.titleSmall)
+    Text("Diagrama de execução", style = MaterialTheme.typography.titleSmall)
     GanttChart(r)
+    Text(
+        "Preenchido = executando · vazio = esperando (fila de prontas) · " +
+            "barra = chegada → término (largura = turnaround)",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
     Text("Tasks", style = MaterialTheme.typography.titleSmall)
     TaskTable(r.tasks)
 }
@@ -255,63 +275,128 @@ private fun MetricsCard(r: SchedResult) {
     }
 }
 
+// Maziero space-time diagram (Cap. 6, figs 6.2/6.4/6.5): one lane per task with
+// t1 at the BOTTOM; each task is a single bar spanning [arrival, finish]; inside
+// it, coloured = running on the CPU, hollow/white = ready-but-waiting. Drawn on a
+// near-white panel (like the book page) so the hollow encoding reads clearly.
+// See docs/maziero-scheduling-diagram.md.
 @Composable
 private fun GanttChart(r: SchedResult) {
-    val cellDp: Dp = 36.dp
-    val rowDp: Dp = 56.dp
-    val axisDp: Dp = 22.dp
     val measurer = rememberTextMeasurer()
-    val total = r.gantt.size.coerceAtLeast(1)
-    val widthDp = cellDp * total
-    val heightDp = rowDp + axisDp
-    val onSurface = MaterialTheme.colorScheme.onSurface
+    val total = r.totalTime.coerceAtLeast(1)
+    val tasks = r.tasks.sortedBy { it.id }          // t1..tN, ascending
+    val n = tasks.size.coerceAtLeast(1)
 
-    Row(Modifier.horizontalScroll(rememberScrollState())) {
-        Canvas(Modifier.width(widthDp).height(heightDp)) {
-            val cw = size.width / total
-            val rowH = size.height * rowDp.value / (rowDp.value + axisDp.value)
-            for ((i, cell) in r.gantt.withIndex()) {
-                val x = i * cw
-                drawRect(
-                    color = taskColor(cell.taskId),
-                    topLeft = Offset(x, 0f),
-                    size = Size(cw - 1f, rowH),
-                )
-                val label = "t${cell.taskId}"
-                val style = TextStyle(color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                val m = measurer.measure(label, style)
-                drawText(
-                    measurer, label,
-                    topLeft = Offset(x + cw / 2f - m.size.width / 2f, rowH / 2f - m.size.height / 2f),
-                    style = style,
-                )
-            }
-            // Time axis: a tick at every integer boundary (0..N), labelled below.
-            val tickStyle = TextStyle(color = onSurface, fontSize = 10.sp)
-            for (i in 0..total) {
-                val x = i * cw
-                drawLine(
-                    color = onSurface,
-                    start = Offset(x, rowH + 2f),
-                    end = Offset(x, rowH + 8f),
-                    strokeWidth = 1f,
-                )
-                val lbl = i.toString()
-                val m = measurer.measure(lbl, tickStyle)
-                drawText(
-                    measurer, lbl,
-                    topLeft = Offset(x - m.size.width / 2f, rowH + 9f),
-                    style = tickStyle,
-                )
-            }
-            drawRect(
-                color = onSurface,
-                topLeft = Offset(0f, 0f),
-                size = Size(size.width, rowH),
-                style = Stroke(width = 1f),
-            )
-        }
+    // Running ticks per task id, reconstructed from the gantt log. Every tick in
+    // [arrival, finish] that is NOT here is a waiting (hollow) tick.
+    val runningByTask = remember(r) {
+        val m = HashMap<Int, MutableSet<Int>>()
+        for (g in r.gantt) m.getOrPut(g.taskId) { HashSet() }.add(g.time)
+        m
     }
+
+    val laneDp: Dp = 46.dp        // height of each task lane
+    val leftDp: Dp = 36.dp        // room for the y axis + tN labels
+    val axisDp: Dp = 28.dp        // room for x ticks + labels
+    val topDp: Dp = 12.dp
+    val trailDp: Dp = 22.dp       // room past the last tick for the x-axis arrow + 't'
+    val minCellDp: Dp = 22.dp     // floor on tick width before we start scrolling
+
+    val ink = Color(0xFF15161A)   // near-black axes / outlines
+    val grid = Color(0xFFB9BDC6)  // light dotted gridlines
+
+    Card(
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFF7F8FB)),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        BoxWithConstraints(
+            Modifier
+                .fillMaxWidth()
+                .padding(8.dp),
+        ) {
+            // Fill the card width when the timeline is short; fall back to a
+            // legible minimum tick width + horizontal scroll when it is long.
+            val cellDp = maxOf(minCellDp, (maxWidth - leftDp - trailDp) / total)
+            val plotWidthDp = cellDp * total
+            val widthDp = leftDp + plotWidthDp + trailDp
+            val heightDp = topDp + laneDp * n + axisDp
+
+            Row(Modifier.horizontalScroll(rememberScrollState())) {
+                Canvas(Modifier.width(widthDp).height(heightDp)) {
+                val cw = plotWidthDp.toPx() / total
+                val left = leftDp.toPx()
+                val top = topDp.toPx()
+                val laneH = laneDp.toPx()
+                val barH = laneH * 0.58f
+                val plotBottom = top + laneH * n
+                val plotRight = left + cw * total
+
+                // Dotted vertical gridlines + bottom-axis ticks/labels at 0..total.
+                val dash = PathEffect.dashPathEffect(floatArrayOf(3f, 5f))
+                val tickStyle = TextStyle(color = ink, fontSize = 11.sp)
+                for (t in 0..total) {
+                    val x = left + t * cw
+                    drawLine(grid, Offset(x, top), Offset(x, plotBottom),
+                        strokeWidth = 1f, pathEffect = dash)
+                    drawLine(ink, Offset(x, plotBottom), Offset(x, plotBottom + 5f), strokeWidth = 1.5f)
+                    val lbl = t.toString()
+                    val mm = measurer.measure(lbl, tickStyle)
+                    drawText(measurer, lbl,
+                        topLeft = Offset(x - mm.size.width / 2f, plotBottom + 7f), style = tickStyle)
+                }
+
+                // Axes as arrows: Y up, X right with a trailing 't'.
+                drawLine(ink, Offset(left, plotBottom), Offset(left, top - 6f), strokeWidth = 2f)
+                drawLine(ink, Offset(left, top - 6f), Offset(left - 4f, top + 2f), strokeWidth = 2f)
+                drawLine(ink, Offset(left, top - 6f), Offset(left + 4f, top + 2f), strokeWidth = 2f)
+                drawLine(ink, Offset(left, plotBottom), Offset(plotRight + 16f, plotBottom), strokeWidth = 2f)
+                drawLine(ink, Offset(plotRight + 16f, plotBottom), Offset(plotRight + 8f, plotBottom - 4f), strokeWidth = 2f)
+                drawLine(ink, Offset(plotRight + 16f, plotBottom), Offset(plotRight + 8f, plotBottom + 4f), strokeWidth = 2f)
+                drawText(measurer, "t",
+                    topLeft = Offset(plotRight + 18f, plotBottom - 9f),
+                    style = TextStyle(color = ink, fontSize = 13.sp))
+
+                // Lanes — t1 at the bottom (index 0 -> bottom-most lane).
+                tasks.forEachIndexed { i, task ->
+                    val laneTop = top + (n - 1 - i) * laneH
+                    val barTop = laneTop + (laneH - barH) / 2f
+                    val nameStyle = TextStyle(color = ink, fontSize = 12.sp)
+                    val nm = measurer.measure(task.name, nameStyle)
+                    drawText(measurer, task.name,
+                        topLeft = Offset(left - nm.size.width - 8f, barTop + barH / 2f - nm.size.height / 2f),
+                        style = nameStyle)
+
+                    if (task.finish <= task.arrival) return@forEachIndexed
+                    val running = runningByTask[task.id] ?: emptySet()
+                    val col = taskColor(task.id)
+
+                    // Each contiguous run of executing ticks = one coloured, bordered
+                    // segment; the gaps between them stay hollow (= card background).
+                    var t = task.arrival
+                    while (t < task.finish) {
+                        if (t in running) {
+                            var e = t
+                            while (e < task.finish && e in running) e++
+                            val x = left + t * cw
+                            val w = (e - t) * cw
+                            drawRect(col, Offset(x, barTop), Size(w, barH))
+                            drawRect(ink, Offset(x, barTop), Size(w, barH), style = Stroke(width = 1.4f))
+                            t = e
+                        } else {
+                            t++
+                        }
+                    }
+                    // Outline the whole [arrival, finish] bar so the hollow waiting
+                    // region is clearly bounded.
+                    drawRect(ink,
+                        Offset(left + task.arrival * cw, barTop),
+                        Size((task.finish - task.arrival) * cw, barH),
+                        style = Stroke(width = 1.6f))
+                }
+            }     // Canvas
+        }         // Row
+        }         // BoxWithConstraints
+    }             // Card
 }
 
 @Composable
