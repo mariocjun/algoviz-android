@@ -104,4 +104,8 @@ dependencies {
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material:material-icons-extended")
+
+    // Unit tests for pure-Kotlin modules (no Android dependencies), run on the
+    // host JVM via `./gradlew test`. Currently covers the Splitwise ledger.
+    testImplementation("junit:junit:4.13.2")
 }
