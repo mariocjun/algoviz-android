@@ -289,3 +289,34 @@ runner can be persisted via a current-user logon Task Scheduler task, or
 
 Windows + git-bash/MSYS2; Android Studio is the supported IDE (CLion's Android
 support is limited). Build runs against NDK 26.1.10909125.
+
+## Local build / run / device-test cheatsheet (don't rediscover this)
+
+- **Gradle needs a JDK 17+** — there may be no `JAVA_HOME`/`java` on PATH (gradlew
+  then fails "JAVA_HOME is not set"). Point it at Android Studio's bundled JDK/JBR
+  before invoking, e.g. PowerShell: `$env:JAVA_HOME='<android-studio-jdk>'; $env:Path="$env:JAVA_HOME\bin;$env:Path"`.
+  Always `./gradlew <task> --console=plain --no-daemon`. Useful tasks:
+  `:app:compileDebugKotlin` (fast error check), `:app:assembleDebug`,
+  `:app:assembleRelease` (validate before tagging), `:app:testDebugUnitTest` (host JUnit).
+- **adb**: the rooted device's serial/addr live ONLY in `scripts/device-registry.local.sh`
+  (gitignored). It usually appears twice (USB + network) → always `adb -s <serial> …`.
+- **Tap-coordinate gotcha (important):** `screencap` and `input tap`/`input swipe`
+  operate in the display's *override* logical resolution (e.g. 720×1520), NOT the
+  physical pixels (1440×3040). Don't guess pixels — `adb shell uiautomator dump
+  /sdcard/ui.xml`, pull it, and tap the **center of an element's `bounds`** found by
+  its `content-desc`/`text`. Compose controls expose semantics, so this is reliable.
+- **Mini-app activities are `exported=false`** → can't `am start` them (Permission
+  Denial). Launch from the **HomeActivity** launcher tile (tap it).
+- **Flaky device sessions:** the screen sleeps fast (taps on an off screen do
+  nothing) → `adb shell svc power stayon true` during interactive testing, and
+  **restore `svc power stayon false`** after. Recover a slept screen with
+  `input keyevent KEYCODE_WAKEUP` + `wm dismiss-keyguard`.
+- **Reading PDFs:** poppler (`pdftoppm`) isn't installed, so `Read` on a PDF fails.
+  Use a Python venv + PyMuPDF: `py -m venv <tmp>` then
+  `<tmp>/Scripts/python -m pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org pymupdf`
+  (pip hits a self-signed cert → the `--trusted-host` flags are required). MSYS
+  `python` is PEP-668 (no pip) but has PIL.
+- **Release:** bump `versionCode`+`versionName` in `app/build.gradle.kts`, verify
+  `:app:assembleRelease` locally, commit `release: vX.Y.Z`, then `git tag -a vX.Y.Z`
+  + `git push origin vX.Y.Z` — the `v*` tag drives `release.yml` (APK + ELF +
+  auto-generated notes + device-test dispatch). CI signs with the debug key.
