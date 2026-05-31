@@ -265,7 +265,7 @@ inline void phase_schedule(System& sys, StepCtx& ctx) {
     // 3. Termination (detected at the start of the tick after remaining hit 0).
     for (Cpu& cpu : sys.cpus) {
         if (cpu.task == -1) continue;
-        Task& t = sys.tasks[cpu.task];
+        Task& t = sys.tasks[static_cast<std::size_t>(cpu.task)];
         if (t.remaining <= 0) {
             t.state = State::Terminated;
             t.finish = sys.time;
@@ -278,7 +278,7 @@ inline void phase_schedule(System& sys, StepCtx& ctx) {
     // 4. Preemption (per CPU).
     for (Cpu& cpu : sys.cpus) {
         if (cpu.task == -1) continue;
-        Task& cur = sys.tasks[cpu.task];
+        Task& cur = sys.tasks[static_cast<std::size_t>(cpu.task)];
         if (cur.state != State::Running) continue;
 
         bool preempt = false;
@@ -365,7 +365,7 @@ inline void phase_execute(System& sys, StepCtx& ctx) {
     for (size_t c = 0; c < sys.cpus.size(); ++c) {
         Cpu& cpu = sys.cpus[c];
         if (cpu.task != -1) {
-            Task& t = sys.tasks[cpu.task];
+            Task& t = sys.tasks[static_cast<std::size_t>(cpu.task)];
             if (t.state == State::Running) {
                 t.remaining--;
                 if (sys.algo == Algo::Rr) cpu.quantum_left--;
