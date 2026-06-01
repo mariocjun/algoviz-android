@@ -239,7 +239,8 @@ private fun VizScreen() {
                 if (count > 0 && ints.get(0) == 0) {
                     stats = "cmp ${fmt(ints.get(5))}  swap ${fmt(ints.get(6))}  " +
                         "wr ${fmt(ints.get(7))}  steps ${fmt(ints.get(8))}"
-                    lastStepKind = ints.get(10)   // buf[10] = last_step_kind (0=Cmp 1=Swap 2=Set 3=Pivot)
+                    lastStepKind = ints.get(10)   // buf[10] = last_step_kind
+                    // buf[11] = sorted_from_start, buf[12] = sorted_from_end (read in drawSingle)
                 } else if (count > 0) {
                     stats = ""
                 }
@@ -446,7 +447,7 @@ private fun VizCanvas(
                             val n = ints.get(1)
                             if (n > 0) {
                                 val idx = (pos.x / size.width.toFloat() * n).toInt().coerceIn(0, n - 1)
-                                onPlayNote(ints.get(11 + idx).toFloat() / n)
+                                onPlayNote(ints.get(13 + idx).toFloat() / n)
                             }
                         }
                     },
@@ -498,6 +499,9 @@ private val STEP_COLORS = arrayOf(
     Color(0xFFE8B62E),   // Pivot   — gold             ("this is the pivot")
 )
 
+// Sorted-region green — same hue as the app's OWED/ARRIVAL_GREEN.
+private val SORTED_GREEN = Color(0xFF3DCF7A)
+
 private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawSingle(
     ints: java.nio.IntBuffer, noteCount: Int, degreeOn: Boolean, moodOn: Boolean, mood: Float,
     lastStepKind: Int = 0,
@@ -505,15 +509,23 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawSingle(
     val n = ints.get(1)
     if (n <= 0) return
     val hiA = ints.get(2); val hiB = ints.get(3); val finished = ints.get(4) == 1
-    // Values now start at buf[11] (buf[10] = last_step_kind was added in v0.6.0).
+    val drawMode = ints.get(9) == 1
+    // buf[11]=sorted_from_start, buf[12]=sorted_from_end (added in v0.6.3)
+    // Values now start at buf[13].
+    val sortedStart = if (!finished && !drawMode) ints.get(11) else 0
+    val sortedEnd   = if (!finished && !drawMode) ints.get(12) else 0
     val w = size.width / n
     val activeCol = STEP_COLORS.getOrElse(lastStepKind) { Color.White }
     for (i in 0 until n) {
-        val v = ints.get(11 + i)
+        val v = ints.get(13 + i)
         val v01 = v.toFloat() / n
         val h = v01 * size.height
-        val col = if (!finished && (i == hiA || i == hiB)) activeCol
-                  else barColor(v01, finished, noteCount, degreeOn, moodOn, mood)
+        val col = when {
+            !finished && (i == hiA || i == hiB) -> activeCol
+            sortedStart > 0 && i < sortedStart  -> SORTED_GREEN
+            sortedEnd   > 0 && i >= n - sortedEnd -> SORTED_GREEN
+            else -> barColor(v01, finished, noteCount, degreeOn, moodOn, mood)
+        }
         drawRect(col, Offset(i * w, size.height - h), Size(maxOf(w - 1f, 1f), h))
     }
 }

@@ -59,6 +59,31 @@ public:
     // layer to drive pseudocode highlighting and semantic bar colours.
     algoviz::StepKind last_step_kind() const { return last_step_kind_; }
 
+    // Contiguous sorted region sizes: how many elements from each end are
+    // already at their final global positions (data_[i] == i+1).
+    // O(k) where k is the sorted count — fast when the region is small.
+    // Returns 0 in draw mode (array values are user-authored, not a shuffle).
+    int sorted_from_end() const {
+        if (draw_mode_) return 0;
+        const int n = static_cast<int>(data_.size());
+        int count = 0;
+        for (int i = n - 1; i >= 0; --i) {
+            if (data_[static_cast<std::size_t>(i)] == i + 1) ++count;
+            else break;
+        }
+        return count;
+    }
+    int sorted_from_start() const {
+        if (draw_mode_) return 0;
+        const int n = static_cast<int>(data_.size());
+        int count = 0;
+        for (int i = 0; i < n; ++i) {
+            if (data_[static_cast<std::size_t>(i)] == i + 1) ++count;
+            else break;
+        }
+        return count;
+    }
+
     // Audio hook: returns a note value in [0,1] once if a step occurred since
     // the last call, else -1.
     float consume_note();

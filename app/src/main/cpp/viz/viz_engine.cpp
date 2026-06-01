@@ -28,8 +28,9 @@ int VizEngine::fill(int* buf, int cap) {
         const int n = static_cast<int>(d.size());
         // Buffer layout (mode 0):
         //   [0=mode, 1=n, 2=hi_a, 3=hi_b, 4=finished, 5=compares, 6=swaps,
-        //    7=writes, 8=steps, 9=draw_mode, 10=last_step_kind, 11..11+n-1=values]
-        const int need = 11 + n;
+        //    7=writes, 8=steps, 9=draw_mode, 10=last_step_kind,
+        //    11=sorted_from_start, 12=sorted_from_end, 13..13+n-1=values]
+        const int need = 13 + n;
         if (cap < need) return 0;
         buf[0] = 0;
         buf[1] = n;
@@ -42,7 +43,9 @@ int VizEngine::fill(int* buf, int cap) {
         buf[8] = static_cast<int>(single_.total_steps());
         buf[9] = single_.draw_mode() ? 1 : 0;
         buf[10] = static_cast<int>(single_.last_step_kind());  // 0=Compare 1=Swap 2=Set 3=Pivot
-        for (int i = 0; i < n; ++i) buf[11 + i] = d[static_cast<std::size_t>(i)];
+        buf[11] = single_.sorted_from_start();
+        buf[12] = single_.sorted_from_end();
+        for (int i = 0; i < n; ++i) buf[13 + i] = d[static_cast<std::size_t>(i)];
         return need;
     }
 
