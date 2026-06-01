@@ -572,6 +572,10 @@ private fun ControlPanel(
     onDegreeColor: (Boolean) -> Unit, onMoodColor: (Boolean) -> Unit, onCollapse: () -> Unit,
     onExplain: () -> Unit,
 ) {
+    // Som & Visual controls are collapsed by default so the first thing a student
+    // sees is the algorithm and transport — the educational core — not 12 scale chips.
+    var audioOpen by remember { mutableStateOf(false) }
+
     Surface(modifier, tonalElevation = 3.dp) {
         Column(
             Modifier
@@ -579,6 +583,7 @@ private fun ControlPanel(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
+            // ── Bloco 1: Modo + Colapsar ──────────────────────────────────────
             Row(verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(selected = mode == 0, onClick = { onMode(0) }, label = { Text("Single") },
@@ -586,46 +591,14 @@ private fun ControlPanel(
                 FilterChip(selected = mode == 1, onClick = { onMode(1) }, label = { Text("Race") },
                     modifier = Modifier.semantics { contentDescription = "Race" })
                 Spacer(Modifier.weight(1f))
-                Icon(Icons.Filled.FlashOn, contentDescription = "Finish FX")
-                Switch(checked = finishFx, onCheckedChange = onFinishFx,
-                    modifier = Modifier.semantics { contentDescription = "Finish FX" })
-                Button(onClick = onCollapse, modifier = Modifier.semantics { contentDescription = "Hide" }) { Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null) }
-            }
-            Row(verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Sound"); Switch(checked = sound, onCheckedChange = onSound)
-                Text("Loop"); Switch(checked = loop, onCheckedChange = onLoop)
-                Text("Rnd"); Switch(checked = loopRandom, onCheckedChange = onLoopRandom,
-                    modifier = Modifier.semantics { contentDescription = "Random loop" })
-            }
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Vol")
-                Slider(value = volume, onValueChange = onVolume, modifier = Modifier.weight(1f))
-            }
-            // Scale / mode picker — sets how element values quantize to pitches
-            // (pentatonic, the Greek modes, whole-tone, blues, chromatic).
-            if (scaleNames.isNotEmpty()) {
-                Text("Scale", fontSize = 12.sp)
-                Row(Modifier.horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    scaleNames.forEachIndexed { i, name ->
-                        FilterChip(selected = i == scaleIdx, onClick = { onScale(i) },
-                            label = { Text(name) },
-                            modifier = Modifier.semantics { contentDescription = name })
-                    }
+                Button(onClick = onCollapse, modifier = Modifier.semantics { contentDescription = "Hide" }) {
+                    Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null)
                 }
             }
-            Row(verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Degrees", fontSize = 12.sp)
-                Switch(checked = degreeColor, onCheckedChange = onDegreeColor,
-                    modifier = Modifier.semantics { contentDescription = "Degrees" })
-                Text("Mood", fontSize = 12.sp)
-                Switch(checked = moodColor, onCheckedChange = onMoodColor,
-                    modifier = Modifier.semantics { contentDescription = "Mood" })
-            }
+
+            // ── Bloco 2: Algoritmo + Transporte + IA (núcleo educativo) ───────
             if (mode == 0) {
+                // Algoritmo — primeira escolha visível, logo abaixo do modo
                 Row(Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     algoNames.forEachIndexed { i, name ->
@@ -633,6 +606,7 @@ private fun ControlPanel(
                             modifier = Modifier.semantics { contentDescription = name })
                     }
                 }
+                // Transporte: play/pause + step ◀▶
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Button(onClick = onPlay, modifier = Modifier.weight(1f).semantics { contentDescription = if (playing) "Pause" else "Play" }) {
                         Icon(if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow, contentDescription = null)
@@ -644,6 +618,7 @@ private fun ControlPanel(
                         Icon(Icons.Filled.SkipNext, contentDescription = null)
                     }
                 }
+                // Ações secundárias: reset, shuffle, draw
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Button(onClick = onReset, modifier = Modifier.weight(1f).semantics { contentDescription = "Reset" }) {
                         Icon(Icons.Filled.Refresh, contentDescription = null)
@@ -655,18 +630,18 @@ private fun ControlPanel(
                         Icon(if (drawMode) Icons.Filled.Sort else Icons.Filled.Edit, contentDescription = null)
                     }
                 }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Button(
-                        onClick = onExplain,
-                        modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Explain AI" },
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 8.dp)
-                    ) {
-                        Icon(Icons.Filled.AutoAwesome, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Explicação IA", fontWeight = FontWeight.SemiBold)
-                    }
+                // Explicação IA — junto ao algoritmo, não no fundo do painel
+                Button(
+                    onClick = onExplain,
+                    modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Explain AI" },
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 8.dp),
+                ) {
+                    Icon(Icons.Filled.AutoAwesome, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Explicação IA", fontWeight = FontWeight.SemiBold)
                 }
             } else {
+                // Race: chips de tipo + transporte mínimo
                 Row(verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Race", fontSize = 12.sp)
@@ -689,9 +664,16 @@ private fun ControlPanel(
                     }
                 }
             }
+
+            // ── Bloco 3: Stats (contextual ao transporte) ─────────────────────
+            if (stats.isNotEmpty()) {
+                Text(stats, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+
+            // ── Bloco 4: Speed / Size / Slow ──────────────────────────────────
             StepperRow("Speed", speed, 1, 512, 1, onSpeed)
             StepperRow("Size", size, 16, 400, 8, onSize)
-            if (size <= 32) {     // slow-motion only makes sense for a few bars
+            if (size <= 32) {
                 Text("Slow (≤32 bars)", fontSize = 12.sp)
                 Row(Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -702,7 +684,55 @@ private fun ControlPanel(
                     }
                 }
             }
-            Text(stats, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+
+            // ── Bloco 5: Som & Visual (colapsável) ────────────────────────────
+            FilledTonalButton(
+                onClick = { audioOpen = !audioOpen },
+                modifier = Modifier.fillMaxWidth().semantics { contentDescription = if (audioOpen) "Fechar Som e Visual" else "Abrir Som e Visual" },
+            ) {
+                Text(if (audioOpen) "▲ Som & Visual" else "▼ Som & Visual", fontSize = 13.sp)
+            }
+            if (audioOpen) {
+                Row(verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Sound"); Switch(checked = sound, onCheckedChange = onSound)
+                    Text("Loop"); Switch(checked = loop, onCheckedChange = onLoop)
+                    Text("Rnd"); Switch(checked = loopRandom, onCheckedChange = onLoopRandom,
+                        modifier = Modifier.semantics { contentDescription = "Random loop" })
+                }
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Vol")
+                    Slider(value = volume, onValueChange = onVolume, modifier = Modifier.weight(1f))
+                }
+                if (scaleNames.isNotEmpty()) {
+                    Text("Scale", fontSize = 12.sp)
+                    Row(Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        scaleNames.forEachIndexed { i, name ->
+                            FilterChip(selected = i == scaleIdx, onClick = { onScale(i) },
+                                label = { Text(name) },
+                                modifier = Modifier.semantics { contentDescription = name })
+                        }
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Degrees", fontSize = 12.sp)
+                    Switch(checked = degreeColor, onCheckedChange = onDegreeColor,
+                        modifier = Modifier.semantics { contentDescription = "Degrees" })
+                    Text("Mood", fontSize = 12.sp)
+                    Switch(checked = moodColor, onCheckedChange = onMoodColor,
+                        modifier = Modifier.semantics { contentDescription = "Mood" })
+                }
+                Row(verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(Icons.Filled.FlashOn, contentDescription = "Finish FX")
+                    Switch(checked = finishFx, onCheckedChange = onFinishFx,
+                        modifier = Modifier.semantics { contentDescription = "Finish FX" })
+                    Text("Finish FX", fontSize = 12.sp)
+                }
+            }
         }
     }
 }
