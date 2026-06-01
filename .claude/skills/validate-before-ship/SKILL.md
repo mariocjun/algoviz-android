@@ -75,6 +75,12 @@ Check, at minimum:
 - For a deeper, owner-facing pass, spin a dedicated critic agent ("ex-Apple HCI
   reviewer"); feed it the real frames and the diff.
 
+**Transition map.** `docs/UX_TRANSITION_MAP.md` is the standing map of every
+important transition + the advanced UX criteria (Material Motion's 4 patterns,
+Saffer microinteractions, feedforward, and the educational-engagement principles
+in §5: flow channel, desirable difficulties, Hook model, juiciness, Zeigarnik,
+peak-end). Cross-check changed transitions against it and append new TR-* findings.
+
 ### Gate 4 — Log every finding
 Append to `docs/VALIDATION_LOG.md` (create if missing): one row per finding with
 **date · version · area · severity · finding · principle · status**. Resolved

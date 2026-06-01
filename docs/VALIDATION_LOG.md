@@ -66,6 +66,17 @@ UX/qualidade do projeto.
 
 ---
 
+## Transições (ver `docs/UX_TRANSITION_MAP.md`)
+Mapa completo das transições dos 6 mini-apps + critérios avançados (Material
+Motion, microinterações, feedforward) + princípios de IHC educacional/viciante
+(flow, desirable difficulties, Hook model, juiciness, Zeigarnik, peak-end).
+**9 🔴 + ~13 🟡 + ~5 🟢 de transição** (TR-*), nenhum bloqueia uma release de
+correção — é o backlog do **próximo eixo do app** (levar as transições ao nível
+Apple-grade do conteúdo). Top 🔴: TR-S1 (draw mode invisível), TR-D1 (transport
+morto na pergunta), TR-M1/TR-D6 (finais em beco sem saída), TR-P1/P2 (Profiler
+sem moment-of-completion/feedforward), TR-R1 (chip muda significado), TR-C1 (nav
+do Códex sem "você está aqui").
+
 ## Histórico de validações
 
 - **2026-06-01 — sessão de teste de toque (N975F, build debug v0.6.3+)**
