@@ -31,3 +31,6 @@ results/
 
 # Secrets
 secrets.properties
+
+# Local planning files
+PLAN_*.md
