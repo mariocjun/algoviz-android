@@ -119,7 +119,7 @@ internal fun TutorialSheet(onDone: (dontShowAgain: Boolean) -> Unit) {
             ) {
                 Checkbox(checked = dontShow, onCheckedChange = { dontShow = it },
                     modifier = Modifier.semantics { contentDescription = "não mostrar de novo" })
-                Text("não mostrar de novo", color = EX_DIM, style = MaterialTheme.typography.bodySmall,
+                Text("não mostrar de novo (esta sessão)", color = EX_DIM, style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.weight(1f))
                 Box(
                     Modifier.clip(RoundedCornerShape(14.dp)).background(EX_BLUE)

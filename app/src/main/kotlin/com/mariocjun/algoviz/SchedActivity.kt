@@ -101,6 +101,10 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.util.Locale
 
+// Pedagogical chip order: FCFS first (simplest), then RR, SJF, SRTF, PRIOc, PRIOp, PRIOd.
+// The native engine returns them as [FCFS=0, SJF=1, RR=2, SRTF=3, PRIOc=4, PRIOp=5, PRIOd=6].
+private val PEDAGOGICAL_ORDER = intArrayOf(0, 2, 1, 3, 4, 5, 6)
+
 // ---- Palette (sampled from the owner's ImGui "modern style" + the book) -------
 
 private val INK_BG = Color(0xFF161618)
@@ -232,6 +236,7 @@ private fun SchedScreen() {
     var playing by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var showInfo by remember { mutableStateOf(false) }
+    var hintShown by remember { mutableStateOf(false) }   // auto-show heuristic on first manual algo switch
     val scope = rememberCoroutineScope()
     val view = LocalView.current
 
@@ -283,7 +288,10 @@ private fun SchedScreen() {
         GanttBoard(r, currentT, cellPop.value, flash.value, { showInfo = true }, m)
     }
     val controls: @Composable (Boolean) -> Unit = { rail ->
-        AlgoChips(algoNames, algoIdx, accent) { i -> algoIdx = i; scope.launch { load(i) } }
+        AlgoChips(algoNames, algoIdx, accent) { i ->
+            if (!hintShown) { showInfo = true; hintShown = true }
+            algoIdx = i; scope.launch { load(i) }
+        }
         Spacer(Modifier.height(10.dp))
         StatusStrip(r, currentT, accent)
         Spacer(Modifier.height(10.dp))
@@ -302,6 +310,8 @@ private fun SchedScreen() {
                 Text("Escalonador", style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.SemiBold, color = INK_TEXT)
                 Spacer(Modifier.height(10.dp))
+                GanttLegend()
+                Spacer(Modifier.height(6.dp))
                 controls(true)
             }
         }
@@ -311,12 +321,16 @@ private fun SchedScreen() {
             Text("Escalonador", style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.SemiBold, color = INK_TEXT)
             Spacer(Modifier.height(10.dp))
-            AlgoChips(algoNames, algoIdx, accent) { i -> algoIdx = i; scope.launch { load(i) } }
+            AlgoChips(algoNames, algoIdx, accent) { i ->
+                if (!hintShown) { showInfo = true; hintShown = true }
+                algoIdx = i; scope.launch { load(i) }
+            }
             Spacer(Modifier.height(10.dp))
             StatusStrip(r, currentT, accent)
             Spacer(Modifier.height(10.dp))
             Box(Modifier.fillMaxWidth().weight(1f)) { chart(Modifier.fillMaxSize()) }
-            Spacer(Modifier.height(10.dp))
+            GanttLegend()
+            Spacer(Modifier.height(6.dp))
             TaskPills(r, currentT)
             Spacer(Modifier.height(12.dp))
             Transport(accent, currentT > 0, currentT < r.totalTime, playing, onBack, onFwd, onRun, onReset)
@@ -329,18 +343,22 @@ private fun SchedScreen() {
 
 @Composable
 private fun AlgoChips(names: Array<String>, selected: Int, accent: Color, onPick: (Int) -> Unit) {
+    val order = if (names.size >= PEDAGOGICAL_ORDER.size) PEDAGOGICAL_ORDER.toList()
+                else names.indices.toList()
     Row(
         Modifier.horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        names.forEachIndexed { i, name ->
-            val on = i == selected
+        order.forEach { origIdx ->
+            if (origIdx >= names.size) return@forEach
+            val name = names[origIdx]
+            val on = origIdx == selected
             val bg by animateColorAsState(if (on) accent else INK_PANEL, tween(250), label = "chipbg")
             Box(
                 Modifier
                     .clip(RoundedCornerShape(50))
                     .background(bg)
-                    .clickable { onPick(i) }
+                    .clickable { onPick(origIdx) }
                     .padding(horizontal = 16.dp, vertical = 9.dp),
             ) {
                 Text(name, color = if (on) Color.White else INK_TEXT_DIM,
@@ -365,9 +383,12 @@ private fun StatusStrip(r: SchedResult, t: Int, accent: Color) {
                     style = MaterialTheme.typography.labelMedium)
                 Spacer(Modifier.height(2.dp))
                 if (finished) {
-                    Text("Concluído · Tt ${fmt(r.avgTurnaround)}  Tw ${fmt(r.avgWaiting)}  Tr ${fmt(r.avgResponse)}",
+                    Text("Concluído · Retorno ${fmt(r.avgTurnaround)}  Espera ${fmt(r.avgWaiting)}  Resp. ${fmt(r.avgResponse)}",
                         color = lerp(INK_TEXT, accent, (metricScale - 0.96f) / 0.04f * 0.5f),
                         fontWeight = FontWeight.Medium, style = MaterialTheme.typography.titleMedium)
+                    Text("(médias: Tt=retorno · Tw=espera · Tr=resposta)",
+                        color = INK_TEXT_DIM.copy(alpha = 0.55f),
+                        style = MaterialTheme.typography.labelSmall)
                 } else {
                     Text(if (runName != null) "Executando $runName" else "CPU ociosa",
                         color = if (runName != null) accent else INK_TEXT_DIM,
@@ -510,6 +531,20 @@ private fun GanttBoard(r: SchedResult, currentT: Int, pop: Float, flash: Float, 
             contentAlignment = Alignment.Center,
         ) { Icon(Icons.Filled.Info, contentDescription = "Como funciona", tint = INK_TEXT_DIM, modifier = Modifier.size(18.dp)) }
       }
+    }
+}
+
+@Composable
+private fun GanttLegend() {
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 3.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("▶ chegada", color = ARRIVAL_GREEN, style = MaterialTheme.typography.labelSmall)
+        Text("■ término", color = FINISH_RED, style = MaterialTheme.typography.labelSmall)
+        Text("■ executando", color = INK_TEXT_DIM, style = MaterialTheme.typography.labelSmall)
+        Text("□ esperando", color = INK_TEXT_DIM.copy(alpha = 0.45f), style = MaterialTheme.typography.labelSmall)
     }
 }
 

@@ -219,6 +219,14 @@ private fun SplitScreen() {
             1 -> CenteredScroll {
                 SummaryCard(total, expenses.size, rawPairs, settlements.size)
                 Spacer(Modifier.height(14.dp))
+                if (settlements.isNotEmpty() && rawPairs > settlements.size) {
+                    Text(
+                        "Algoritmo Min Cash Flow: $rawPairs dívidas diretas → ${settlements.size} pagamentos",
+                        color = BLUE, style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(horizontal = 4.dp)
+                    )
+                    Spacer(Modifier.height(10.dp))
+                }
                 SettlementsSection(settlements, colorOf)
                 Spacer(Modifier.height(16.dp))
             }
@@ -707,7 +715,7 @@ private fun DebtGraph(
                 .padding(horizontal = 12.dp, vertical = 7.dp),
         ) {
             Text(
-                if (extremeLoaded) "✨ Extremo →" else "✨ exemplo",
+                if (extremeLoaded) "✨ Extremo →" else "✨ caso extremo",
                 color = if (extremeLoaded) BLUE else TXT_DIM,
                 fontWeight = if (extremeLoaded) FontWeight.SemiBold else FontWeight.Normal,
                 style = MaterialTheme.typography.labelMedium,

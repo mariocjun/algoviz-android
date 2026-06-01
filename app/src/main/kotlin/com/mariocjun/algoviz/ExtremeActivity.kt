@@ -117,7 +117,7 @@ internal val GLASS = Color(0xFF15151B)     // translucent panel base
 // Steps per second. Spans the slow end (½, 1) the owner likes through 8/16.
 private val SPS_LABELS = arrayOf("½", "1", "2", "4", "8", "16")
 private val SPS_MS = longArrayOf(2000, 1000, 500, 250, 125, 62)
-private const val DEFAULT_SPS = 4         // 8 steps/sec (190 absorbs is a lot at 4)
+private const val DEFAULT_SPS = 2         // 2 steps/sec — slow enough to read each step
 
 /** A short-lived floating label that rises off an edge: who owes whom (red),
  *  a cancellation (gold), a receipt (green). Purely visual feedback. */

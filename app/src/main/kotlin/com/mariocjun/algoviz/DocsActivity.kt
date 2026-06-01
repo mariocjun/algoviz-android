@@ -25,16 +25,23 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import kotlinx.coroutines.launch
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -87,18 +94,55 @@ class DocsActivity : ComponentActivity() {
 
 @Composable
 private fun CodexScreen() {
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+    val secIndices = remember {
+        CODEX.withIndex().filter { (_, n) -> n is Sec }
+            .associate { (i, n) -> (n as Sec).n to i + 2 }  // +2 for masthead + navindex items
+    }
     Box(Modifier.fillMaxSize().background(DOC_BG), contentAlignment = Alignment.TopCenter) {
-        Column(
-            Modifier.widthIn(max = 680.dp).fillMaxSize().verticalScroll(rememberScrollState())
-                .padding(horizontal = 22.dp, vertical = 18.dp),
+        androidx.compose.foundation.lazy.LazyColumn(
+            state = listState,
+            modifier = Modifier.widthIn(max = 680.dp).fillMaxSize().padding(horizontal = 22.dp),
         ) {
-            Masthead()
-            Spacer(Modifier.height(20.dp))
-            for (node in CODEX) DocNode(node)
-            Spacer(Modifier.height(40.dp))
-            Text("∎  algoviz · código aberto · feito com rigor", color = DOC_DIM,
-                fontFamily = FontFamily.Monospace, fontSize = 11.sp)
-            Spacer(Modifier.height(24.dp))
+            item {
+                Spacer(Modifier.height(18.dp))
+                Masthead()
+                Spacer(Modifier.height(8.dp))
+            }
+            item {
+                NavIndex(secIndices.keys.sorted()) { num ->
+                    secIndices[num]?.let { idx -> scope.launch { listState.animateScrollToItem(idx) } }
+                }
+                Spacer(Modifier.height(12.dp))
+            }
+            items(CODEX) { node -> DocNode(node) }
+            item {
+                Spacer(Modifier.height(40.dp))
+                Text("∎  algoviz · código aberto · feito com rigor", color = DOC_DIM,
+                    fontFamily = FontFamily.Monospace, fontSize = 11.sp)
+                Spacer(Modifier.height(24.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun NavIndex(sections: List<String>, onJump: (String) -> Unit) {
+    Row(
+        Modifier.horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        sections.forEach { num ->
+            Box(
+                Modifier.clip(RoundedCornerShape(50))
+                    .background(DOC_PANEL)
+                    .clickable { onJump(num) }
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+            ) {
+                Text("§$num", color = DOC_KEY, fontFamily = FontFamily.Monospace, fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold)
+            }
         }
     }
 }
@@ -210,6 +254,15 @@ private val CODEX: List<Node> = listOf(
       "didáticos: cada um pega um algoritmo clássico e o torna visível, audível e — de preferência — " +
       "addictivo. O motor é C++; os pixels são Compose; a régua é nível Apple.", drop = true),
 
+    Sub("Como aprender com este app"),
+    B("Sort Visualizer — escolha um algoritmo, toque ▶. Use ◀▶ para avançar passo a passo e 'Explicação IA' para entender a lógica."),
+    B("Scheduler — toque ▶ para animar o Gantt. Toque ℹ para ver a heurística de cada algoritmo de escalonamento."),
+    B("Racha — vá à aba Grafo. Toque '✨ caso extremo' para ver 190 dívidas colapsarem em 1 pagamento."),
+    B("Min Cash Flow — deixe o tutorial abrir e avance os 4 atos com ▶. Pause e observe a fórmula no display."),
+    B("Profiler — toque Run para medir o hardware do seu dispositivo (NEON, SIMD, STREAM, latência)."),
+    B("Códex — você está aqui: documentação viva e mapa de qualidade do projeto."),
+    Rule,
+
     Sec("1", "Os mini-apps"),
     Sub("Sort visualizer"),
     P("8 ordenações escritas uma só vez como corrotinas C++ (Generator<Step>): o benchmark drena o " +
@@ -282,8 +335,9 @@ private val CODEX: List<Node> = listOf(
       "Usabilidade para Capacidade de interação). O mapa acima segue a edição 2011, que é a adotada " +
       "pela ABNT NBR."),
 
-    Sec("5", "Backlog de excelência"),
-    P("O que o code-review aponta para mantermos o nível — em ordem de retorno:"),
+    Sec("5", "O que ainda vamos melhorar"),
+    P("Transparência é parte da qualidade: estas são as lacunas que já identificamos e escolhemos não fechar ainda — " +
+      "seja por prioridade, seja para fazer direito. Ver lacunas assumidas é também uma lição de engenharia."),
     B("Testabilidade: a UI Compose não tem testes instrumentados (só smoke). Adicionar androidTest/Robolectric."),
     B("Modularidade: extrair um GraphDraw compartilhado (Racha e Min Cash Flow duplicam o desenho de aresta curva)."),
     B("Portabilidade/i18n: externalizar as strings pt-BR para res/values (+ values-en)."),
