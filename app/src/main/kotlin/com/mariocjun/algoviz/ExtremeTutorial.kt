@@ -142,17 +142,32 @@ private fun MoneyPlayground() {
     val measurer = rememberTextMeasurer()
     val scope = rememberCoroutineScope()
     val wiggle = remember { Animatable(0f) }
-    var tick by remember { mutableIntStateOf(0) }       // forces per-frame redraw
+    // Single-slot holder so each tap cancels the previous wiggle coroutine instead of
+    // queuing behind it — prevents the animation backlog that freezes on rapid taps.
+    val wiggleJob = remember { arrayOf<kotlinx.coroutines.Job?>(null) }
+    var tick by remember { mutableIntStateOf(0) }
+
+    // Cached once — remeasuring "$" inside the Canvas every frame per coin is
+    // O(coins × fps) layout work; on 120 Hz with a pile of coins it stalls the UI.
+    val dollarLayout = remember(measurer) {
+        measurer.measure("$", TextStyle(color = EX_BG, fontSize = 11.sp, fontWeight = FontWeight.Bold))
+    }
 
     LaunchedEffect(Unit) {
         var last = 0L
         while (true) {
-            withFrameNanos { now ->
-                val dt = if (last == 0L) 0.016f else ((now - last) / 1_000_000_000f).coerceAtMost(0.05f)
-                last = now
-                for (c in coins) { c.x += c.vx * dt; c.y += c.vy * dt; c.vy += 560f * dt; c.age += dt }
-                if (coins.isNotEmpty()) coins.removeAll { it.age > 2.0f }
-                tick++
+            if (coins.isEmpty()) {
+                // No coins → don't burn a frame callback on every vsync (120 Hz on S24 Ultra).
+                kotlinx.coroutines.delay(100)
+                last = 0L
+            } else {
+                withFrameNanos { now ->
+                    val dt = if (last == 0L) 0.016f else ((now - last) / 1_000_000_000f).coerceAtMost(0.05f)
+                    last = now
+                    for (c in coins) { c.x += c.vx * dt; c.y += c.vy * dt; c.vy += 560f * dt; c.age += dt }
+                    coins.removeAll { it.age > 2.0f }
+                    tick++
+                }
             }
         }
     }
@@ -162,26 +177,31 @@ private fun MoneyPlayground() {
             .background(EX_BG).border(1.dp, Color.White.copy(alpha = 0.06f), RoundedCornerShape(16.dp))
             .pointerInput(Unit) {
                 detectTapGestures {
-                    scope.launch { wiggle.snapTo(1f); wiggle.animateTo(0f, tween(520)) }
-                    val cx = size.width / 2f; val cy = size.height * 0.52f
-                    val ang = Random.nextFloat() * 6.2832f
-                    val sp = 240f + Random.nextFloat() * 230f
-                    coins.add(Coin(cx, cy - 22f, (cos(ang) * sp).toFloat(), (sin(ang) * sp).toFloat() - 170f))
+                    wiggleJob[0]?.cancel()
+                    wiggleJob[0] = scope.launch { wiggle.snapTo(1f); wiggle.animateTo(0f, tween(520)) }
+                    if (coins.size < 12) {
+                        val cx = size.width / 2f; val cy = size.height * 0.52f
+                        val ang = Random.nextFloat() * 6.2832f
+                        val sp = 240f + Random.nextFloat() * 230f
+                        coins.add(Coin(cx, cy - 22f, (cos(ang) * sp).toFloat(), (sin(ang) * sp).toFloat() - 170f))
+                    }
                 }
             },
         contentAlignment = Alignment.BottomCenter,
     ) {
         Canvas(Modifier.fillMaxSize()) {
-            tick.let { }                            // observe tick so positions redraw each frame
+            tick.let { }
             val cx = size.width / 2f; val cy = size.height * 0.52f
             val deg = (sin(wiggle.value * PI.toFloat() * 4f) * 12f * wiggle.value)
             rotate(deg, pivot = Offset(cx, cy + 36f)) { drawDude(cx, cy) }
             for (c in coins) {
                 val a = (1f - c.age / 2.0f).coerceIn(0f, 1f)
                 drawCircle(EX_GOLD.copy(alpha = a), radius = 11f, center = Offset(c.x, c.y))
-                val st = TextStyle(color = EX_BG.copy(alpha = a), fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                val m = measurer.measure("$", st)
-                drawText(textLayoutResult = m, topLeft = Offset(c.x - m.size.width / 2f, c.y - m.size.height / 2f))
+                drawText(
+                    textLayoutResult = dollarLayout,
+                    alpha = a,
+                    topLeft = Offset(c.x - dollarLayout.size.width / 2f, c.y - dollarLayout.size.height / 2f),
+                )
             }
         }
         Text("toque no boneco — ele joga uns trocados 👆", color = EX_DIM, fontSize = 12.sp,
