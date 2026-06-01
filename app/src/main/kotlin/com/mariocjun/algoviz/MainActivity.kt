@@ -153,7 +153,7 @@ class MainActivity : ComponentActivity() {
                                 onSensors     = { triggerJob("sensors") },
                                 onCameras     = { triggerJob("cameras") },
                                 onUpload      = { uploadLast() },
-                                onViz         = { startActivity(Intent(this, VizActivity::class.java)) },
+                                onViz         = { startActivity(Intent(this@MainActivity, VizActivity::class.java)) },
                             )
                         }
                     }
