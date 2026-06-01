@@ -237,6 +237,13 @@ private fun SchedScreen() {
     var error by remember { mutableStateOf<String?>(null) }
     var showInfo by remember { mutableStateOf(false) }
     var hintShown by remember { mutableStateOf(false) }   // auto-show heuristic on first manual algo switch
+    // ---- Challenge Mode state --------------------------------------------------
+    var challengeMode by remember { mutableStateOf(false) }
+    var challengePendingId by remember { mutableStateOf<Int?>(null) }
+    var challengePickedId by remember { mutableStateOf<Int?>(null) }
+    var challengeScore by remember { mutableIntStateOf(0) }
+    var challengeTotal by remember { mutableIntStateOf(0) }
+    // ---------------------------------------------------------------------------
     val scope = rememberCoroutineScope()
     val view = LocalView.current
 
@@ -244,16 +251,36 @@ private fun SchedScreen() {
         val r = withContext(Dispatchers.Default) {
             runCatching { parseResult(SchedBridge.nativeSchedRunMaziero(idx)) }
         }
-        r.onSuccess { result = it; currentT = 0; playing = false; error = null }
+        r.onSuccess {
+            result = it; currentT = 0; playing = false; error = null
+            // reset pending challenge state on algo switch (score persists)
+            challengePendingId = null; challengePickedId = null
+        }
             .onFailure { error = it.message ?: it.javaClass.simpleName }
     }
     LaunchedEffect(Unit) { load(0) }
 
     // Run-to-complete plays the playhead forward tick-by-tick.
+    // In challenge mode, pauses before any context switch and waits for the user's pick.
     LaunchedEffect(playing, result) {
         if (!playing) return@LaunchedEffect
-        val total = result?.totalTime ?: 0
-        while (playing && currentT < total) { delay(150); currentT++ }
+        val r2 = result ?: return@LaunchedEffect
+        val total = r2.totalTime
+        while (playing && currentT < total) {
+            val nextT = currentT + 1
+            if (challengeMode && nextT < total) {
+                val curRunning = runningAt(r2, currentT)
+                val nextRunning = runningAt(r2, nextT)
+                if (nextRunning != -1 && nextRunning != curRunning) {
+                    // Pause and wait for the user to pick
+                    playing = false
+                    challengePendingId = nextRunning
+                    return@LaunchedEffect
+                }
+            }
+            delay(150)
+            currentT++
+        }
         playing = false
     }
 
@@ -280,22 +307,81 @@ private fun SchedScreen() {
     }
 
     val onBack: () -> Unit = { playing = false; if (currentT > 0) { currentT--; haptic() } }
-    val onFwd: () -> Unit = { playing = false; if (currentT < r.totalTime) { currentT++; haptic() } }
-    val onRun: () -> Unit = { if (currentT >= r.totalTime) currentT = 0; playing = !playing }
+    val onFwd: () -> Unit = {
+        if (challengePendingId == null) {
+            playing = false; if (currentT < r.totalTime) { currentT++; haptic() }
+        }
+    }
+    val onRun: () -> Unit = {
+        if (challengePendingId == null) {
+            if (currentT >= r.totalTime) currentT = 0; playing = !playing
+        }
+    }
     val onReset: () -> Unit = { playing = false; currentT = 0 }
+
+    val onChallengePick: (Int) -> Unit = { taskId ->
+        if (challengePendingId != null && challengePickedId == null) {
+            // Capture before async work — guards against algo switch or mode toggle during delay.
+            val expectedPendingId = challengePendingId
+            challengeTotal++
+            val correct = taskId == expectedPendingId
+            if (correct) challengeScore++
+            challengePickedId = taskId
+            haptic()
+            scope.launch {
+                delay(if (correct) 500L else 900L)
+                // Bail if challenge was externally reset (algo switch, mode disabled) during delay.
+                if (challengePendingId != expectedPendingId) return@launch
+                challengePendingId = null
+                challengePickedId = null
+                currentT++
+                haptic()
+                if (currentT < r.totalTime) playing = true
+            }
+        }
+    }
 
     val chart: @Composable (Modifier) -> Unit = { m ->
         GanttBoard(r, currentT, cellPop.value, flash.value, { showInfo = true }, m)
     }
     val controls: @Composable (Boolean) -> Unit = { rail ->
-        AlgoChips(algoNames, algoIdx, accent) { i ->
-            if (!hintShown) { showInfo = true; hintShown = true }
-            algoIdx = i; scope.launch { load(i) }
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            AlgoChips(
+                algoNames, algoIdx, accent,
+                Modifier.weight(1f),
+            ) { i ->
+                if (!hintShown) { showInfo = true; hintShown = true }
+                algoIdx = i; scope.launch { load(i) }
+            }
+            ChallengeChip(
+                enabled = challengeMode,
+                score = challengeScore,
+                total = challengeTotal,
+            ) {
+                challengeMode = !challengeMode
+                if (!challengeMode) {
+                    challengePendingId = null
+                    challengePickedId = null
+                }
+            }
         }
         Spacer(Modifier.height(10.dp))
         StatusStrip(r, currentT, accent)
         Spacer(Modifier.height(10.dp))
-        TaskPills(r, currentT)
+        if (challengePendingId != null) {
+            ChallengePrompt(algoName = r.algo, nextTick = currentT + 1)
+            Spacer(Modifier.height(8.dp))
+        }
+        TaskPills(
+            r = r,
+            currentT = currentT,
+            challengePendingId = challengePendingId,
+            challengePickedId = challengePickedId,
+            onChallengePick = if (challengePendingId != null) onChallengePick else null,
+        )
         Spacer(Modifier.height(if (rail) 14.dp else 12.dp))
         Transport(accent, currentT > 0, currentT < r.totalTime, playing, onBack, onFwd, onRun, onReset, stacked = rail)
     }
@@ -321,9 +407,28 @@ private fun SchedScreen() {
             Text("Escalonador", style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.SemiBold, color = INK_TEXT)
             Spacer(Modifier.height(10.dp))
-            AlgoChips(algoNames, algoIdx, accent) { i ->
-                if (!hintShown) { showInfo = true; hintShown = true }
-                algoIdx = i; scope.launch { load(i) }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                AlgoChips(
+                    algoNames, algoIdx, accent,
+                    Modifier.weight(1f),
+                ) { i ->
+                    if (!hintShown) { showInfo = true; hintShown = true }
+                    algoIdx = i; scope.launch { load(i) }
+                }
+                ChallengeChip(
+                    enabled = challengeMode,
+                    score = challengeScore,
+                    total = challengeTotal,
+                ) {
+                    challengeMode = !challengeMode
+                    if (!challengeMode) {
+                        challengePendingId = null
+                        challengePickedId = null
+                    }
+                }
             }
             Spacer(Modifier.height(10.dp))
             StatusStrip(r, currentT, accent)
@@ -331,7 +436,17 @@ private fun SchedScreen() {
             Box(Modifier.fillMaxWidth().weight(1f)) { chart(Modifier.fillMaxSize()) }
             GanttLegend()
             Spacer(Modifier.height(6.dp))
-            TaskPills(r, currentT)
+            if (challengePendingId != null) {
+                ChallengePrompt(algoName = r.algo, nextTick = currentT + 1)
+                Spacer(Modifier.height(8.dp))
+            }
+            TaskPills(
+                r = r,
+                currentT = currentT,
+                challengePendingId = challengePendingId,
+                challengePickedId = challengePickedId,
+                onChallengePick = if (challengePendingId != null) onChallengePick else null,
+            )
             Spacer(Modifier.height(12.dp))
             Transport(accent, currentT > 0, currentT < r.totalTime, playing, onBack, onFwd, onRun, onReset)
             Spacer(Modifier.height(10.dp))
@@ -342,11 +457,17 @@ private fun SchedScreen() {
 }
 
 @Composable
-private fun AlgoChips(names: Array<String>, selected: Int, accent: Color, onPick: (Int) -> Unit) {
+private fun AlgoChips(
+    names: Array<String>,
+    selected: Int,
+    accent: Color,
+    modifier: Modifier = Modifier,
+    onPick: (Int) -> Unit,
+) {
     val order = if (names.size >= PEDAGOGICAL_ORDER.size) PEDAGOGICAL_ORDER.toList()
                 else names.indices.toList()
     Row(
-        Modifier.horizontalScroll(rememberScrollState()),
+        modifier.horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         order.forEach { origIdx ->
@@ -572,11 +693,18 @@ private fun DrawScope.drawCell(x: Float, top: Float, cw: Float, h: Float, col: C
 // ---- Task pills ("ready tasks light up") --------------------------------------
 
 @Composable
-private fun TaskPills(r: SchedResult, currentT: Int) {
+private fun TaskPills(
+    r: SchedResult,
+    currentT: Int,
+    challengePendingId: Int? = null,
+    challengePickedId: Int? = null,
+    onChallengePick: ((Int) -> Unit)? = null,
+) {
     val pulse by rememberInfiniteTransition(label = "pillpulse").animateFloat(
         0.4f, 1f, infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "pill",
     )
     val runId = runningAt(r, currentT)
+    val challengeActive = onChallengePick != null
     Row(
         Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -584,23 +712,120 @@ private fun TaskPills(r: SchedResult, currentT: Int) {
         for (task in r.tasks.sortedBy { it.id }) {
             val phase = phaseAt(task, runId, currentT)
             val col = taskColor(task.id)
-            val (bg, fg, ring) = when (phase) {
-                TaskPhase.RUNNING -> Triple(col, Color.White, col)
-                TaskPhase.READY -> Triple(col.copy(alpha = 0.12f + 0.20f * pulse), col, col.copy(alpha = pulse))
-                TaskPhase.DONE -> Triple(INK_PANEL, INK_TEXT_DIM.copy(alpha = 0.7f), Color.Transparent)
-                TaskPhase.NEW -> Triple(INK_PANEL, INK_TEXT_DIM.copy(alpha = 0.45f), Color.Transparent)
+
+            // When a challenge is pending, evaluate pickability at the NEXT tick so tasks
+            // that arrive exactly at currentT+1 are valid candidates (they appear as NEW at
+            // currentT but the algo can legally pick them — sim processes arrivals and dispatch
+            // in the same tick). Use runId=-1 so no task is artificially marked "running".
+            val phaseForChallenge = if (challengeActive) phaseAt(task, -1, currentT + 1) else phase
+            val isPickable = challengeActive && challengePickedId == null &&
+                phaseForChallenge == TaskPhase.READY
+
+            // Determine border and background considering challenge state
+            val (bg, fg, ring) = when {
+                // Challenge answer feedback: picked correct
+                challengeActive && challengePickedId == task.id && task.id == challengePendingId ->
+                    Triple(col.copy(alpha = 0.18f), ARRIVAL_GREEN, ARRIVAL_GREEN)
+                // Challenge answer feedback: picked wrong (the wrong one gets red)
+                challengeActive && challengePickedId == task.id && task.id != challengePendingId ->
+                    Triple(FINISH_RED.copy(alpha = 0.14f), FINISH_RED, FINISH_RED)
+                // Challenge answer feedback: reveal correct answer when user was wrong
+                challengeActive && challengePickedId != null && task.id == challengePendingId ->
+                    Triple(col.copy(alpha = 0.18f), ARRIVAL_GREEN, ARRIVAL_GREEN)
+                // Challenge mode active (waiting for pick): candidate tasks get ACCENT border
+                isPickable ->
+                    Triple(col.copy(alpha = 0.12f + 0.20f * pulse), col, ACCENT)
+                // Normal phase rendering
+                else -> when (phase) {
+                    TaskPhase.RUNNING -> Triple(col, Color.White, col)
+                    TaskPhase.READY -> Triple(col.copy(alpha = 0.12f + 0.20f * pulse), col, col.copy(alpha = pulse))
+                    TaskPhase.DONE -> Triple(INK_PANEL, INK_TEXT_DIM.copy(alpha = 0.7f), Color.Transparent)
+                    TaskPhase.NEW -> Triple(INK_PANEL, INK_TEXT_DIM.copy(alpha = 0.45f), Color.Transparent)
+                }
             }
+
+            val borderWidth = when {
+                challengeActive && (challengePickedId != null) &&
+                    (task.id == challengePickedId || task.id == challengePendingId) -> 2.dp
+                isPickable -> 2.dp
+                ring != Color.Transparent -> 1.5.dp
+                else -> 0.dp
+            }
+
             Box(
                 Modifier
                     .clip(RoundedCornerShape(12.dp))
                     .background(bg)
-                    .then(if (ring != Color.Transparent) Modifier.border(1.5.dp, ring, RoundedCornerShape(12.dp)) else Modifier)
+                    .then(
+                        if (ring != Color.Transparent && borderWidth > 0.dp)
+                            Modifier.border(borderWidth, ring, RoundedCornerShape(12.dp))
+                        else Modifier
+                    )
+                    .then(if (isPickable) Modifier.clickable { onChallengePick!!(task.id) } else Modifier)
                     .padding(horizontal = 14.dp, vertical = 8.dp),
             ) {
-                Text(task.name + if (phase == TaskPhase.DONE) " ✓" else "",
-                    color = fg, fontWeight = if (phase == TaskPhase.RUNNING) FontWeight.Bold else FontWeight.Medium,
-                    style = MaterialTheme.typography.labelLarge)
+                Text(
+                    task.name + if (phase == TaskPhase.DONE) " ✓" else "",
+                    color = fg,
+                    fontWeight = if (phase == TaskPhase.RUNNING || isPickable) FontWeight.Bold else FontWeight.Medium,
+                    style = MaterialTheme.typography.labelLarge,
+                )
             }
+        }
+    }
+}
+
+// ---- Challenge chip & prompt --------------------------------------------------
+
+@Composable
+private fun ChallengeChip(enabled: Boolean, score: Int, total: Int, onClick: () -> Unit) {
+    val bg by animateColorAsState(
+        if (enabled) ACCENT else INK_PANEL_HI, tween(250), label = "challengechipbg",
+    )
+    val label = if (total > 0) "🎯 $score/$total" else "🎯 Desafio"
+    Box(
+        Modifier
+            .clip(RoundedCornerShape(50))
+            .background(bg)
+            .then(
+                if (!enabled) Modifier.border(1.5.dp, ACCENT.copy(alpha = 0.55f), RoundedCornerShape(50))
+                else Modifier.border(1.5.dp, ACCENT, RoundedCornerShape(50))
+            )
+            .clickable { onClick() }
+            .padding(horizontal = 14.dp, vertical = 9.dp),
+    ) {
+        Text(
+            label,
+            color = if (enabled) Color.White else INK_TEXT_DIM,
+            fontWeight = if (enabled) FontWeight.SemiBold else FontWeight.Normal,
+            style = MaterialTheme.typography.labelLarge,
+        )
+    }
+}
+
+@Composable
+private fun ChallengePrompt(algoName: String, nextTick: Int) {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(INK_PANEL)
+            .border(1.dp, ACCENT.copy(alpha = 0.45f), RoundedCornerShape(16.dp))
+            .padding(12.dp),
+    ) {
+        Column {
+            Text(
+                "Tick $nextTick · $algoName",
+                color = INK_TEXT_DIM,
+                style = MaterialTheme.typography.labelMedium,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                "Qual tarefa a CPU escolhe agora?",
+                color = INK_TEXT,
+                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.titleSmall,
+            )
         }
     }
 }
