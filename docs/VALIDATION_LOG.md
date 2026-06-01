@@ -66,6 +66,16 @@ UX/qualidade do projeto.
 
 ---
 
+## Semântica de representação temporal (ver `docs/UX_STUDY.md` §5)
+Eixo NOVO, levantado pelo dono — escapou de 3 reviews (motion ≠ semântica).
+
+| # | Sev | Apontamento | Princípio | Status |
+|---|-----|-------------|-----------|--------|
+| TM-1 | 🔴 | Scheduler: playhead na borda ESQUERDA da célula atual → a célula "executando" fica à direita da linha (parece futuro); contradiz "Executando t1" | now-line convention (esq=passado); instante×intervalo (Aigner); fencepost (Dijkstra) | aberto (v0.6.6) |
+| TM-2 | 🟡 | Min Cash Flow: scrubber/cursor sobre steps discretos — auditar fronteira passado/futuro do thumb | idem | a auditar |
+| TM-3 | 🟡 | Sort: fronteira ordenado↔não-ordenado (a barra-limite pertence a quem?) + hi_a/hi_b "lendo" sem sugerir "escrevendo" | idem | a auditar |
+| TM-4 | 🟢 | Rótulos de tempo do eixo (borda vs centro da célula) — consistência com o playhead | idem | a auditar |
+
 ## Transições (ver `docs/UX_TRANSITION_MAP.md`)
 Mapa completo das transições dos 6 mini-apps + critérios avançados (Material
 Motion, microinterações, feedforward) + princípios de IHC educacional/viciante
@@ -84,6 +94,14 @@ do Códex sem "você está aqui").
   auto-close 39-min, Sort, Desafio) — zero crash/ANR no logcat · Gate 3 ⚠️
   crítica HCI do Modo Desafio = **2,5/10 no onboarding** → abriu MD-1…MD-9.
   Veredito: **DO-NOT-SHIP** enquanto MD-1/2/3 (🔴) abertos.
+- **2026-06-01 — estudo de UX completo (planejamento, sem código) + vacilo TM-1**
+  3 agentes críticos produziram `docs/UX_STUDY.md` (personas+jornada, spec das
+  transições, plano de engajamento ético) e `docs/UX_TRANSITION_MAP.md` (9🔴 TR-*
+  + princípios educacionais). **O dono pegou um vacilo que os reviews perderam**:
+  a semântica do playhead do Gantt (TM-1 🔴) — a linha do "agora" está na borda
+  esquerda da célula atual, fazendo a tarefa em execução parecer futura. Adicionado
+  o **Gate 3.5 (semântica de representação)** ao pipeline e o eixo TM-* (app todo).
+- **2026-06-01 — v0.6.5 RELEASED** (APK + ELF, CI verde) — fix do answer-leak.
 - **2026-06-01 — correção do Modo Desafio + re-review ex-Apple (v0.6.4)**
   Resolvidos MD-1..5, MD-7, MD-9 (1ª rodada). Re-review ex-Apple subiu o
   onboarding **2,5 → 6,5** e revelou 2 🔴 novos: **MD-10** (resposta vazava no

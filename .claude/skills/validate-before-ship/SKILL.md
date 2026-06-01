@@ -75,6 +75,19 @@ Check, at minimum:
 - For a deeper, owner-facing pass, spin a dedicated critic agent ("ex-Apple HCI
   reviewer"); feed it the real frames and the diff.
 
+### Gate 3.5 — Representation semantics (what each pixel MEANS)
+Reviews catch cognitive load / onboarding / affordance / feedforward / motion but
+keep missing **whether the representation is semantically correct**. For every
+temporal or positional visualization, validate:
+- **Instant vs interval** (Aigner): is the thing a point in time or a span? A
+  discrete tick is an interval `[t,t+1)`, not a point.
+- **Fencepost / half-open boundary** (Dijkstra): a marker on a boundary is
+  ambiguous between "end of previous" and "start of next" — resolve it.
+- **Spatio-temporal mapping / now-line convention**: left = past/done,
+  right = future/planned, line = now. The "currently executing" element must NOT
+  sit on the future side of the playhead (the v0.6.5 Gantt did exactly this — TM-1).
+- Cross-check against `docs/UX_STUDY.md` §5 and append `TM-*` findings.
+
 **Transition map.** `docs/UX_TRANSITION_MAP.md` is the standing map of every
 important transition + the advanced UX criteria (Material Motion's 4 patterns,
 Saffer microinteractions, feedforward, and the educational-engagement principles
