@@ -32,6 +32,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FlashOn
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Pause
@@ -42,6 +43,7 @@ import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Sort
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.FilledTonalButton
@@ -51,6 +53,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -60,6 +63,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
@@ -73,10 +77,13 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.mariocjun.algoviz.ai.GeminiAssistant
+import kotlinx.coroutines.launch
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.Locale
@@ -191,6 +198,12 @@ private fun VizScreen() {
     var degreeColor by remember { mutableStateOf(true) }  // highlight chord tones (root/3rd/5th)
     var moodColor by remember { mutableStateOf(true) }    // mode-mood brightness/saturation
 
+    // AI Assistant state
+    val gemini = remember { GeminiAssistant() }
+    val scope = rememberCoroutineScope()
+    var aiExplanation by remember { mutableStateOf<String?>(null) }
+    var aiLoading by remember { mutableStateOf(false) }
+
     // Push initial UI state into the engine so the two never disagree (the C++
     // engine has its own defaults; the UI is the source of truth on launch).
     LaunchedEffect(Unit) {
@@ -302,6 +315,51 @@ private fun VizScreen() {
             onLoopRandom = { b -> loopRandom = b; VizBridge.nativeSetLoopRandom(b) },
             onFinishFx = { b -> finishFx = b },
             onCollapse = { controlsOpen = false },
+            onExplain = {
+                if (gemini.hasValidApiKey()) {
+                    aiLoading = true
+                    scope.launch {
+                        aiExplanation = gemini.explainAlgorithm(algoNames.getOrElse(algoIdx) { "Unknown" })
+                        aiLoading = false
+                    }
+                } else {
+                    aiExplanation = "API Key não configurada. Crie o arquivo secrets.properties com GOOGLE_AI_API_KEY."
+                }
+            }
+        )
+    }
+
+    if (aiExplanation != null) {
+        AlertDialog(
+            onDismissRequest = { aiExplanation = null },
+            confirmButton = {
+                TextButton(onClick = { aiExplanation = null }) { Text("OK") }
+            },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Filled.AutoAwesome, contentDescription = null, tint = Color(0xFF8E75FF))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Explicação do Gemini", fontWeight = FontWeight.Bold)
+                }
+            },
+            text = {
+                Text(aiExplanation!!, style = MaterialTheme.typography.bodyMedium)
+            },
+            containerColor = Color(0xFF1C1C1E), // Apple-grade dark
+            titleContentColor = Color.White,
+            textContentColor = Color(0xFFE5E5E7)
+        )
+    }
+
+    if (aiLoading) {
+        AlertDialog(
+            onDismissRequest = { },
+            confirmButton = { },
+            title = { Text("Consultando IA...") },
+            text = { Text("O Gemini está analisando o algoritmo para você.") },
+            containerColor = Color(0xFF1C1C1E),
+            titleContentColor = Color.White,
+            textContentColor = Color(0xFFE5E5E7)
         )
     }
 
@@ -439,8 +497,8 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawVhs(
     // "◀◀ REW" marker in the empty upper area (VHS reference).
     val style = TextStyle(color = Color.White.copy(alpha = 0.85f), fontSize = 44.sp)
     val m = measurer.measure("◀◀ REW", style)
-    drawText(measurer, "◀◀ REW",
-        topLeft = Offset(w / 2f - m.size.width / 2f, h * 0.15f), style = style)
+    drawText(textLayoutResult = m,
+        topLeft = Offset(w / 2f - m.size.width / 2f, h * 0.15f))
 }
 
 private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawRace(
@@ -453,7 +511,7 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawRace(
     val n = ints.get(2)
     if (L <= 0 || n <= 0) return
     val aspect = size.width / size.height
-    var cols = sqrt(L.toDouble() * aspect.toDouble()).roundToInt().coerceIn(1, L)
+    val cols = sqrt(L.toDouble() * aspect.toDouble()).roundToInt().coerceIn(1, L)
     val rows = ceil(L.toDouble() / cols).toInt()
     val cw = size.width / cols
     val ch = size.height / rows
@@ -494,7 +552,8 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawRace(
         val measured = measurer.measure(label, base)
         val fit = (avail / measured.size.width.toFloat()).coerceIn(0.5f, 1f)
         val style = if (fit < 1f) base.copy(fontSize = (13f * fit).coerceAtLeast(7f).sp) else base
-        drawText(measurer, label, topLeft = Offset(ox + pad, oy + pad), style = style)
+        val m = measurer.measure(label, style)
+        drawText(textLayoutResult = m, topLeft = Offset(ox + pad, oy + pad))
     }
 }
 
@@ -511,6 +570,7 @@ private fun ControlPanel(
     onVolume: (Float) -> Unit, onScale: (Int) -> Unit, onLoop: (Boolean) -> Unit, onLoopRandom: (Boolean) -> Unit,
     onFinishFx: (Boolean) -> Unit, onSlow: (Int) -> Unit, onRaceMode: (Int) -> Unit,
     onDegreeColor: (Boolean) -> Unit, onMoodColor: (Boolean) -> Unit, onCollapse: () -> Unit,
+    onExplain: () -> Unit,
 ) {
     Surface(modifier, tonalElevation = 3.dp) {
         Column(
@@ -593,6 +653,17 @@ private fun ControlPanel(
                     }
                     FilledTonalButton(onClick = onDraw, modifier = Modifier.weight(1f).semantics { contentDescription = if (drawMode) "Sort" else "Draw" }) {
                         Icon(if (drawMode) Icons.Filled.Sort else Icons.Filled.Edit, contentDescription = null)
+                    }
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Button(
+                        onClick = onExplain,
+                        modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Explain AI" },
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 8.dp)
+                    ) {
+                        Icon(Icons.Filled.AutoAwesome, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Explicação IA", fontWeight = FontWeight.SemiBold)
                     }
                 }
             } else {

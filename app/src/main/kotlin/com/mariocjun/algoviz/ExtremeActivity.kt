@@ -464,14 +464,14 @@ private fun DrawScope.drawReductionFrame(
         val ist = TextStyle(color = Color.White.copy(alpha = if (live) 1f else 0.7f),
             fontSize = (nodeR * 0.62f).coerceAtLeast(7f).sp, fontWeight = FontWeight.Bold)
         val im = measurer.measure(initials(name), ist)
-        drawText(measurer, initials(name),
-            topLeft = Offset(pp.x - im.size.width / 2f, pp.y - im.size.height / 2f), style = ist)
+        drawText(textLayoutResult = im,
+            topLeft = Offset(pp.x - im.size.width / 2f, pp.y - im.size.height / 2f))
         if (live && liveCount <= 6) {
             val bc = if (b > 0) EX_OWED else EX_OWES
             val txt = (if (b > 0) "+" else "−") + money(kotlin.math.abs(b)).removePrefix("R$ ")
             val bs = TextStyle(color = bc, fontSize = (nodeR * 0.5f).coerceIn(8f, 12f).sp, fontWeight = FontWeight.Bold)
             val bm = measurer.measure(txt, bs)
-            drawText(measurer, txt, topLeft = Offset(pp.x - bm.size.width / 2f, pp.y + nodeR + 2f), style = bs)
+            drawText(textLayoutResult = bm, topLeft = Offset(pp.x - bm.size.width / 2f, pp.y + nodeR + 2f))
         }
     }
 
@@ -481,13 +481,12 @@ private fun DrawScope.drawReductionFrame(
         val pu = pos[f.a] ?: continue; val pv = pos[f.b] ?: continue
         val a = (1f - f.age / 1.05f).coerceIn(0f, 1f)
         val mx = (pu.x + pv.x) / 2f; val my = (pu.y + pv.y) / 2f - f.age * 50f
-        val style = TextStyle(color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        val style = TextStyle(color = Color.White.copy(alpha = a), fontSize = 11.sp, fontWeight = FontWeight.Bold)
         val m = measurer.measure(f.text, style)
         val cw = m.size.width + 12f; val ch = m.size.height + 6f
         val tl = Offset(mx - cw / 2f, my - ch / 2f)
         drawRoundRect(f.color.copy(alpha = 0.92f * a), topLeft = tl, size = Size(cw, ch), cornerRadius = CornerRadius(7f, 7f))
-        drawText(measurer, f.text, topLeft = Offset(mx - m.size.width / 2f, my - m.size.height / 2f),
-            style = style.copy(color = Color.White.copy(alpha = a)))
+        drawText(textLayoutResult = m, topLeft = Offset(mx - m.size.width / 2f, my - m.size.height / 2f))
     }
 
     // 5) Full-screen lightning flash (settle / payoff).
@@ -564,7 +563,7 @@ private fun DrawScope.drawAmountChip(
     val tl = Offset(lx - cw / 2f, ly - ch / 2f)
     drawRoundRect(EX_BG.copy(alpha = 0.95f), topLeft = tl, size = Size(cw, ch), cornerRadius = CornerRadius(8f, 8f))
     drawRoundRect(col, topLeft = tl, size = Size(cw, ch), cornerRadius = CornerRadius(8f, 8f), style = Stroke(1.5f))
-    drawText(measurer, text, topLeft = Offset(lx - m.size.width / 2f, ly - m.size.height / 2f), style = style)
+    drawText(textLayoutResult = m, topLeft = Offset(lx - m.size.width / 2f, ly - m.size.height / 2f))
 }
 
 // ---- Glass overlays -----------------------------------------------------------

@@ -2,13 +2,20 @@ import java.util.Properties
 
 plugins {
     id("com.android.application")
-    kotlin("android") version "1.9.24"
+    id("org.jetbrains.kotlin.plugin.compose")
 }
 
 android {
     namespace = "com.mariocjun.algoviz"
-    compileSdk = 35
+    compileSdk = 36
     ndkVersion = "26.1.10909125"
+
+    val secretsProps = rootProject.file("secrets.properties")
+    val googleApiKey = if (secretsProps.exists()) {
+        Properties().apply { secretsProps.inputStream().use { load(it) } }.getProperty("GOOGLE_AI_API_KEY") ?: ""
+    } else {
+        ""
+    }
 
     defaultConfig {
         applicationId = "com.mariocjun.algoviz"
@@ -20,8 +27,10 @@ android {
         // 2020+ flagship) are >= API 29, so this is no practical loss.
         minSdk = 29
         targetSdk = 35
-        versionCode = 9
-        versionName = "0.5.3"
+        versionCode = 10
+        versionName = "0.5.4"
+
+        buildConfigField("String", "GOOGLE_AI_API_KEY", "\"$googleApiKey\"")
 
         externalNativeBuild {
             cmake {
@@ -77,17 +86,13 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
-    composeOptions {
-        // Compose compiler extension matched to Kotlin 1.9.24.
-        kotlinCompilerExtensionVersion = "1.5.14"
-    }
+    compileSdkMinor = 1
+    buildToolsVersion = "37.0.0"
 }
 
 dependencies {
@@ -108,4 +113,7 @@ dependencies {
     // Unit tests for pure-Kotlin modules (no Android dependencies), run on the
     // host JVM via `./gradlew test`. Currently covers the Splitwise ledger.
     testImplementation("junit:junit:4.13.2")
+
+    // Google AI (Gemini)
+    implementation("com.google.ai.client.generativeai:generativeai:0.9.0")
 }

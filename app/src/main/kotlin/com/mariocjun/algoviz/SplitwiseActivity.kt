@@ -677,13 +677,13 @@ private fun DebtGraph(
                     drawCircle(colorOf(name), radius = nodeR, center = pp)
                     val ist = TextStyle(color = Color.White, fontSize = initFont.sp, fontWeight = FontWeight.Bold)
                     val im = measurer.measure(initials(name), ist)
-                    drawText(measurer, initials(name),
-                        topLeft = Offset(pp.x - im.size.width / 2f, pp.y - im.size.height / 2f), style = ist)
+                    drawText(textLayoutResult = im,
+                        topLeft = Offset(pp.x - im.size.width / 2f, pp.y - im.size.height / 2f))
                     if (!many) {
                         val nst = TextStyle(color = TXT, fontSize = 10.sp)
                         val nm = measurer.measure(name, nst)
-                        drawText(measurer, name,
-                            topLeft = Offset(pp.x - nm.size.width / 2f, pp.y + nodeR + 3f), style = nst)
+                        drawText(textLayoutResult = nm,
+                            topLeft = Offset(pp.x - nm.size.width / 2f, pp.y + nodeR + 3f))
                     }
                 }
             }
@@ -781,6 +781,6 @@ private fun DrawScope.drawDebtEdge(
         drawRoundRect(BG.copy(alpha = 0.92f), topLeft = tl, size = Size(cw, ch), cornerRadius = CornerRadius(7f, 7f))
         drawRoundRect(col.copy(alpha = 0.45f), topLeft = tl, size = Size(cw, ch),
             cornerRadius = CornerRadius(7f, 7f), style = Stroke(1f))
-        drawText(measurer, money(amt), topLeft = Offset(lx - m.size.width / 2f, ly - m.size.height / 2f), style = style)
+        drawText(textLayoutResult = m, topLeft = Offset(lx - m.size.width / 2f, ly - m.size.height / 2f))
     }
 }

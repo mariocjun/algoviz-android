@@ -429,8 +429,8 @@ private fun GanttBoard(r: SchedResult, currentT: Int, pop: Float, flash: Float, 
                     Offset(gx, topPad), Offset(gx, plotBottom), strokeWidth = 1f)
                 if (tk % 5 == 0 || tk == total) {
                     val m = measurer.measure(tk.toString(), tickStyle)
-                    drawText(measurer, tk.toString(),
-                        topLeft = Offset(gx - m.size.width / 2f, plotBottom + 3f), style = tickStyle)
+                    drawText(textLayoutResult = m,
+                        topLeft = Offset(gx - m.size.width / 2f, plotBottom + 3f))
                 }
             }
 
@@ -449,9 +449,8 @@ private fun GanttBoard(r: SchedResult, currentT: Int, pop: Float, flash: Float, 
                 val nameStyle = TextStyle(color = labelCol, fontSize = 11.sp,
                     fontWeight = if (phase == TaskPhase.RUNNING || phase == TaskPhase.READY) FontWeight.Bold else FontWeight.Normal)
                 val nm = measurer.measure(task.name, nameStyle)
-                drawText(measurer, task.name,
-                    topLeft = Offset(left - nm.size.width - 6f, barTop + barH / 2f - nm.size.height / 2f),
-                    style = nameStyle)
+                drawText(textLayoutResult = nm,
+                    topLeft = Offset(left - nm.size.width - 6f, barTop + barH / 2f - nm.size.height / 2f))
 
                 // ghost bar: subtle arrival→finish track (the "waiting" hollow), READY pulses
                 if (task.finish > task.arrival) {
@@ -748,9 +747,8 @@ private fun HeuristicAnim(h: Heuristic) {
                 Size(cpuW, cpuH), cr(8f), style = Stroke(2f))
             val cpuStyle = TextStyle(color = INK_TEXT_DIM, fontSize = 11.sp)
             val cpuLbl = measurer.measure("CPU", cpuStyle)
-            drawText(measurer, "CPU",
-                topLeft = Offset(w / 2f - cpuLbl.size.width / 2f, cpuY + cpuH / 2f - cpuLbl.size.height / 2f),
-                style = cpuStyle)
+            drawText(textLayoutResult = cpuLbl,
+                topLeft = Offset(w / 2f - cpuLbl.size.width / 2f, cpuY + cpuH / 2f - cpuLbl.size.height / 2f))
 
             // candidate boxes (the ready queue)
             for (i in 0 until 3) {
@@ -767,16 +765,18 @@ private fun HeuristicAnim(h: Heuristic) {
                         val s = TextStyle(color = if (isCh) Color.White else INK_TEXT,
                             fontSize = 15.sp, fontWeight = FontWeight.Bold)
                         val m = measurer.measure(prios[i].toString(), s)
-                        drawText(measurer, prios[i].toString(),
-                            topLeft = Offset(bx + boxW / 2f - m.size.width / 2f, by + bh / 2f - m.size.height / 2f), style = s)
+                        drawText(textLayoutResult = m,
+                            topLeft = Offset(bx + boxW / 2f - m.size.width / 2f, by + bh / 2f - m.size.height / 2f))
                         if (h.mode == AnimMode.AGING && !isCh) {
                             val a = TextStyle(color = ARRIVAL_GREEN.copy(alpha = 0.35f + 0.6f * pulse), fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            drawText(measurer, "↑+α", topLeft = Offset(bx + boxW / 2f - 13f, by - 17f), style = a)
+                            val am = measurer.measure("↑+α", a)
+                            drawText(textLayoutResult = am, topLeft = Offset(bx + boxW / 2f - 13f, by - 17f))
                         }
                     }
                     AnimMode.ARRIVAL -> {
                         val s = TextStyle(color = INK_TEXT_DIM, fontSize = 10.sp)
-                        drawText(measurer, "${i + 1}º", topLeft = Offset(bx + boxW / 2f - 7f, qBottom + 3f), style = s)
+                        val sm = measurer.measure("${i + 1}º", s)
+                        drawText(textLayoutResult = sm, topLeft = Offset(bx + boxW / 2f - 7f, qBottom + 3f))
                     }
                     else -> {}
                 }
@@ -798,7 +798,7 @@ private fun HeuristicAnim(h: Heuristic) {
                     Offset(2 * slot + slot / 2f, qBottom - boxH(2)), strokeWidth = 1.6f)
                 val rs = TextStyle(color = rCol, fontSize = 10.sp)
                 val rl = measurer.measure("↻ volta", rs)
-                drawText(measurer, "↻ volta", topLeft = Offset(w - rl.size.width, cpuY), style = rs)
+                drawText(textLayoutResult = rl, topLeft = Offset(w - rl.size.width, cpuY))
             }
         }
     }

@@ -181,7 +181,7 @@ private fun MoneyPlayground() {
                 drawCircle(EX_GOLD.copy(alpha = a), radius = 11f, center = Offset(c.x, c.y))
                 val st = TextStyle(color = EX_BG.copy(alpha = a), fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 val m = measurer.measure("$", st)
-                drawText(measurer, "$", topLeft = Offset(c.x - m.size.width / 2f, c.y - m.size.height / 2f), style = st)
+                drawText(textLayoutResult = m, topLeft = Offset(c.x - m.size.width / 2f, c.y - m.size.height / 2f))
             }
         }
         Text("toque no boneco — ele joga uns trocados 👆", color = EX_DIM, fontSize = 12.sp,
