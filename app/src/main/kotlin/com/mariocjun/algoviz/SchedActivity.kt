@@ -73,6 +73,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -86,6 +87,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
@@ -225,6 +228,10 @@ private fun nextDispatch(r: SchedResult, t: Int): Int? {
 
 private fun fmt(f: Float): String = String.format(Locale.US, "%.2f", f)
 
+/** Session-only "challenge onboarding shown" flag — resets when the process
+ *  dies, so the intro sheet shows once per execution (mirrors ExtremeTutorial). */
+object ChallengeIntro { var dismissed = false }
+
 // ---- Screen -------------------------------------------------------------------
 
 @Composable
@@ -243,6 +250,7 @@ private fun SchedScreen() {
     var challengePickedId by remember { mutableStateOf<Int?>(null) }
     var challengeScore by remember { mutableIntStateOf(0) }
     var challengeTotal by remember { mutableIntStateOf(0) }
+    var showChallengeIntro by remember { mutableStateOf(false) }   // first-run onboarding sheet
     // ---------------------------------------------------------------------------
     val scope = rememberCoroutineScope()
     val view = LocalView.current
@@ -329,7 +337,9 @@ private fun SchedScreen() {
             challengePickedId = taskId
             haptic()
             scope.launch {
-                delay(if (correct) 500L else 900L)
+                // 800ms on a hit gives the eye time to read the ✓ + green before
+                // advancing; 1100ms on a miss to read both the ✗ and the revealed answer.
+                delay(if (correct) 800L else 1100L)
                 // Bail if challenge was externally reset (algo switch, mode disabled) during delay.
                 if (challengePendingId != expectedPendingId) return@launch
                 challengePendingId = null
@@ -338,6 +348,18 @@ private fun SchedScreen() {
                 haptic()
                 if (currentT < r.totalTime) playing = true
             }
+        }
+    }
+
+    // Toggle challenge mode; on FIRST enable per session, open the onboarding
+    // sheet (resolves the no-onboarding / unclear-affordance findings MD-1..3).
+    val onToggleChallenge: () -> Unit = {
+        challengeMode = !challengeMode
+        if (challengeMode) {
+            if (!ChallengeIntro.dismissed) showChallengeIntro = true
+        } else {
+            challengePendingId = null
+            challengePickedId = null
         }
     }
 
@@ -356,23 +378,18 @@ private fun SchedScreen() {
                 if (!hintShown) { showInfo = true; hintShown = true }
                 algoIdx = i; scope.launch { load(i) }
             }
-            ChallengeChip(
-                enabled = challengeMode,
-                score = challengeScore,
-                total = challengeTotal,
-            ) {
-                challengeMode = !challengeMode
-                if (!challengeMode) {
-                    challengePendingId = null
-                    challengePickedId = null
-                }
-            }
+            ChallengeChip(enabled = challengeMode, onClick = onToggleChallenge)
         }
         Spacer(Modifier.height(10.dp))
-        StatusStrip(r, currentT, accent)
+        StatusStrip(
+            r, currentT, accent,
+            hideNext = challengePendingId != null,
+            challengeScore = if (challengeMode) challengeScore else -1,
+            challengeTotal = challengeTotal,
+        )
         Spacer(Modifier.height(10.dp))
         if (challengePendingId != null) {
-            ChallengePrompt(algoName = r.algo, nextTick = currentT + 1)
+            ChallengePrompt(algoIdx = algoIdx, algoName = r.algo, nextTick = currentT + 1)
             Spacer(Modifier.height(8.dp))
         }
         TaskPills(
@@ -418,26 +435,21 @@ private fun SchedScreen() {
                     if (!hintShown) { showInfo = true; hintShown = true }
                     algoIdx = i; scope.launch { load(i) }
                 }
-                ChallengeChip(
-                    enabled = challengeMode,
-                    score = challengeScore,
-                    total = challengeTotal,
-                ) {
-                    challengeMode = !challengeMode
-                    if (!challengeMode) {
-                        challengePendingId = null
-                        challengePickedId = null
-                    }
-                }
+                ChallengeChip(enabled = challengeMode, onClick = onToggleChallenge)
             }
             Spacer(Modifier.height(10.dp))
-            StatusStrip(r, currentT, accent)
+            StatusStrip(
+                r, currentT, accent,
+                hideNext = challengePendingId != null,
+                challengeScore = if (challengeMode) challengeScore else -1,
+                challengeTotal = challengeTotal,
+            )
             Spacer(Modifier.height(10.dp))
             Box(Modifier.fillMaxWidth().weight(1f)) { chart(Modifier.fillMaxSize()) }
             GanttLegend()
             Spacer(Modifier.height(6.dp))
             if (challengePendingId != null) {
-                ChallengePrompt(algoName = r.algo, nextTick = currentT + 1)
+                ChallengePrompt(algoIdx = algoIdx, algoName = r.algo, nextTick = currentT + 1)
                 Spacer(Modifier.height(8.dp))
             }
             TaskPills(
@@ -454,6 +466,9 @@ private fun SchedScreen() {
     }
 
     if (showInfo) HeuristicDialog(algoIdx) { showInfo = false }
+    if (showChallengeIntro) {
+        ChallengeIntroSheet { ChallengeIntro.dismissed = true; showChallengeIntro = false }
+    }
 }
 
 @Composable
@@ -491,7 +506,12 @@ private fun AlgoChips(
 }
 
 @Composable
-private fun StatusStrip(r: SchedResult, t: Int, accent: Color) {
+private fun StatusStrip(
+    r: SchedResult, t: Int, accent: Color,
+    hideNext: Boolean = false,          // during a pending challenge, don't reveal the answer
+    challengeScore: Int = -1,           // >=0 → show a (non-interactive) score badge
+    challengeTotal: Int = 0,
+) {
     val finished = t >= r.totalTime
     val runId = runningAt(r, t)
     val runName = r.tasks.firstOrNull { it.id == runId }?.name
@@ -515,10 +535,23 @@ private fun StatusStrip(r: SchedResult, t: Int, accent: Color) {
                         color = if (runName != null) accent else INK_TEXT_DIM,
                         fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleMedium)
                     if (nextName != null) {
-                        Text("Próxima: $nextName", color = INK_TEXT_DIM,
-                            style = MaterialTheme.typography.labelMedium)
+                        // Never spell out the answer while the student is being asked it.
+                        Text(if (hideNext) "Próxima: 🎯 adivinhe!" else "Próxima: $nextName",
+                            color = INK_TEXT_DIM, style = MaterialTheme.typography.labelMedium)
                     }
                 }
+            }
+            // Non-interactive score badge (placar) — separated from the toggle chip so
+            // checking the score can never accidentally turn the mode off.
+            if (challengeScore >= 0 && challengeTotal > 0) {
+                Box(
+                    Modifier.clip(RoundedCornerShape(50)).background(ACCENT.copy(alpha = 0.16f))
+                        .padding(horizontal = 10.dp, vertical = 5.dp),
+                ) {
+                    Text("🎯 $challengeScore de $challengeTotal", color = accent,
+                        fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+                }
+                Spacer(Modifier.width(10.dp))
             }
             Row(verticalAlignment = Alignment.Bottom) {
                 Text("$t", color = INK_TEXT, fontWeight = FontWeight.Bold,
@@ -752,8 +785,26 @@ private fun TaskPills(
                 else -> 0.dp
             }
 
+            // MD-4: while waiting for an answer, dim the non-candidate pills so the
+            // clickable ones stand out (which to click is then unambiguous).
+            val dim = challengeActive && challengePickedId == null && !isPickable
+            // MD-5: pair the green/red feedback with a ✓/✗ glyph so it survives
+            // colour-blindness (not colour-only).
+            val answered = challengeActive && challengePickedId != null
+            val suffix = when {
+                answered && task.id == challengePickedId && task.id == challengePendingId -> "  ✓"
+                answered && task.id == challengePickedId && task.id != challengePendingId -> "  ✗"
+                answered && task.id == challengePendingId -> "  ✓"   // reveal correct after a wrong pick
+                phase == TaskPhase.DONE -> " ✓"
+                else -> ""
+            }
+
             Box(
                 Modifier
+                    .alpha(if (dim) 0.4f else 1f)
+                    // ≥48dp tap target (HIG 44pt / Material 48dp / CLAUDE.md) — the pills
+                    // are the primary challenge target, so they must clear the minimum.
+                    .heightIn(min = 48.dp)
                     .clip(RoundedCornerShape(12.dp))
                     .background(bg)
                     .then(
@@ -763,9 +814,10 @@ private fun TaskPills(
                     )
                     .then(if (isPickable) Modifier.clickable { onChallengePick!!(task.id) } else Modifier)
                     .padding(horizontal = 14.dp, vertical = 8.dp),
+                contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    task.name + if (phase == TaskPhase.DONE) " ✓" else "",
+                    task.name + suffix,
                     color = fg,
                     fontWeight = if (phase == TaskPhase.RUNNING || isPickable) FontWeight.Bold else FontWeight.Medium,
                     style = MaterialTheme.typography.labelLarge,
@@ -778,11 +830,13 @@ private fun TaskPills(
 // ---- Challenge chip & prompt --------------------------------------------------
 
 @Composable
-private fun ChallengeChip(enabled: Boolean, score: Int, total: Int, onClick: () -> Unit) {
+private fun ChallengeChip(enabled: Boolean, onClick: () -> Unit) {
     val bg by animateColorAsState(
         if (enabled) ACCENT else INK_PANEL_HI, tween(250), label = "challengechipbg",
     )
-    val label = if (total > 0) "🎯 $score/$total" else "🎯 Desafio"
+    // Pure toggle — the score lives in the StatusStrip badge, so tapping here can
+    // only ever turn the mode on/off (never misread as "check my score").
+    val label = if (enabled) "🎯 Desafio ✓" else "🎯 Desafio"
     Box(
         Modifier
             .clip(RoundedCornerShape(50))
@@ -804,7 +858,10 @@ private fun ChallengeChip(enabled: Boolean, score: Int, total: Int, onClick: () 
 }
 
 @Composable
-private fun ChallengePrompt(algoName: String, nextTick: Int) {
+private fun ChallengePrompt(algoIdx: Int, algoName: String, nextTick: Int) {
+    // Recap the algorithm's rule at the moment of decision (MD-9) so the student
+    // doesn't have to have opened the ℹ card first.
+    val rule = heuristicFor(algoIdx).caption
     Box(
         Modifier
             .fillMaxWidth()
@@ -815,7 +872,7 @@ private fun ChallengePrompt(algoName: String, nextTick: Int) {
     ) {
         Column {
             Text(
-                "Tick $nextTick · $algoName",
+                "Tick $nextTick · $algoName — $rule",
                 color = INK_TEXT_DIM,
                 style = MaterialTheme.typography.labelMedium,
             )
@@ -826,7 +883,69 @@ private fun ChallengePrompt(algoName: String, nextTick: Int) {
                 fontWeight = FontWeight.Bold,
                 style = MaterialTheme.typography.titleSmall,
             )
+            Spacer(Modifier.height(4.dp))
+            // Explicit gesture signifier (MD-2): kills the tap-vs-drag ambiguity.
+            Text(
+                "👆 Toque na tarefa destacada que você acha que entra",
+                color = ACCENT,
+                fontWeight = FontWeight.Medium,
+                style = MaterialTheme.typography.labelMedium,
+            )
         }
+    }
+}
+
+/** First-run onboarding for Challenge Mode — opens once per session the first
+ *  time the 🎯 chip is enabled. Mirrors the Min Cash Flow TutorialSheet pattern
+ *  so the app is internally consistent (MD-1, MD-3). Tells the student WHAT
+ *  changes and WHICH gesture to use before the first prompt ever fires. */
+@Composable
+private fun ChallengeIntroSheet(onDone: () -> Unit) {
+    Box(
+        Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.74f))
+            .clickable(
+                interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                indication = null,
+            ) { /* scrim swallows taps; closing is explicit via the button */ },
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            Modifier.fillMaxWidth().widthIn(max = 420.dp).padding(20.dp)
+                .clip(RoundedCornerShape(24.dp)).background(INK_PANEL)
+                .border(1.dp, ACCENT.copy(alpha = 0.30f), RoundedCornerShape(24.dp))
+                .padding(22.dp),
+        ) {
+            Text("🎯 Modo Desafio", color = INK_TEXT, fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.titleLarge)
+            Spacer(Modifier.height(4.dp))
+            // The "why" — sells the value (testing effect), not just the rules.
+            Text("Prever antes de ver fixa o algoritmo melhor do que só assistir.",
+                color = INK_TEXT_DIM, style = MaterialTheme.typography.bodyMedium)
+            Spacer(Modifier.height(14.dp))
+            IntroStep("1", "A simulação pausa antes de cada troca de tarefa.")
+            IntroStep("2", "Toque na tarefa destacada que você acha que a CPU vai escolher.")
+            IntroStep("3", "Acertou fica verde ✓ · errou fica vermelha ✗ e eu revelo a certa.")
+            Spacer(Modifier.height(18.dp))
+            Box(
+                Modifier.fillMaxWidth().height(50.dp).clip(RoundedCornerShape(14.dp))
+                    .background(ACCENT).clickable { onDone() }
+                    .semantics { contentDescription = "Começar desafio" },
+                contentAlignment = Alignment.Center,
+            ) { Text("Começar ▶", color = Color.White, fontWeight = FontWeight.SemiBold) }
+        }
+    }
+}
+
+@Composable
+private fun IntroStep(n: String, text: String) {
+    Row(Modifier.padding(bottom = 10.dp), verticalAlignment = Alignment.Top) {
+        Box(
+            Modifier.size(24.dp).clip(RoundedCornerShape(50)).background(ACCENT.copy(alpha = 0.18f)),
+            contentAlignment = Alignment.Center,
+        ) { Text(n, color = ACCENT, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium) }
+        Spacer(Modifier.width(10.dp))
+        Text(text, color = INK_TEXT.copy(alpha = 0.9f), style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.weight(1f))
     }
 }
 
