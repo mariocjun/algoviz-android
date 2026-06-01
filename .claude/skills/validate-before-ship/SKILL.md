@@ -67,7 +67,11 @@ Check, at minimum:
 - **Affordance & signifier of the gesture**: is it clear whether to tap / drag /
   long-press? A control whose only signifier is a border is suspect.
 - **Feedback not by colour alone** (daltonism): pair green/red with icon/shape.
-- **Gulf of execution**: after an action, is the next step communicated?
+- **Gulf of execution / evaluation (feedforward)**: after an action, is the next
+  step communicated, and is the *transition* clean? Capture a rapid frame BURST
+  per action (tap → +200ms → +500ms → +1s), not just before/after — temporal
+  leaks hide here (e.g. v0.6.4 leaked the next answer in the gap *between*
+  challenge questions; static frames missed it, the burst caught it).
 - For a deeper, owner-facing pass, spin a dedicated critic agent ("ex-Apple HCI
   reviewer"); feed it the real frames and the diff.
 

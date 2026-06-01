@@ -30,7 +30,10 @@ UX/qualidade do projeto.
 | MD-12 | 🟡 | Passo 3 do sheet empilhava 3 ideias numa linha | Chunking | ✅ v0.6.4 — reescrito enxuto |
 | MD-13 | 🟡 | Sheet não vendia o "porquê" (testing effect) | Motivação no onboarding | ✅ v0.6.4 — "Prever antes de ver fixa o algoritmo…" |
 | MD-14 | 🟡 | Delay de acerto (500 ms) curto p/ ler o reveal | Tempo de leitura | ✅ v0.6.4 — 800 ms acerto / 1100 ms erro |
-| MD-15 | 🟡 | Feedback troca de cor por corte seco (sem cross-fade) | Movimento/continuidade (HIG) | aberto |
+| MD-15 | 🟡 | Feedback troca de cor por corte seco (sem cross-fade) | Movimento/continuidade (HIG) | parcial — prompt vira veredito; cross-fade ainda 🟢 aberto (MD-22) |
+| **MD-20** | 🔴 | **Resposta vazava no INTERVALO entre perguntas**: faixa mostrava "Próxima: t3" por ~0,6 s antes da pergunta seguinte (hideNext só cobria o pending) | Integridade do teste | ✅ v0.6.5 — `hideNext = challengeMode` (esconde sempre que o modo está ligado) |
+| MD-21 | 🟡 | Instrução obsoleta no feedback: "👆 Toque na tarefa" persistia após já ter respondido; sem fechamento/feedforward | Gulf of evaluation; Nielsen #1 | ✅ v0.6.5 — prompt vira veredito "Acertou! ✓ / Era X ✗ · Próxima pergunta em instantes…" |
+| MD-22 | 🟢 | Transração prompt↔veredito↔próxima ainda é corte seco (sem AnimatedVisibility/Crossfade) | Movimento (HIG) | aberto |
 | MD-16 | 🟢 | Cor ACCENT na microcópia de gesto compete com a pergunta | Hierarquia tipográfica | aberto |
 | MD-17 | 🟢 | Sheet sem animação de entrada nem "pular" | Movimento; controle | aberto |
 | MD-18 | 🟢 | "Não mostrar de novo" não persiste entre sessões (em memória) | Respeito ao recorrente | aberto |
@@ -78,3 +81,12 @@ UX/qualidade do projeto.
   separado, pills 48 dp, ✓/✗ — zero crash. **Abertos restantes (não-bloqueantes):**
   MD-6, MD-8, MD-15..19 (🟡/🟢, débito rastreado p/ v0.6.5). Área Modo Desafio
   **sem 🔴 aberto → liberada para ship.**
+- **2026-06-01 — v0.6.4 RELEASED (APK + ELF publicados, CI verde)**, depois
+  re-review ex-Apple focado em **transições/feedforward** (sequência de frames,
+  não estáticos). Revelou **MD-20 🔴**: a resposta vazava no intervalo entre
+  perguntas ("Próxima: t3"). Como a v0.6.4 já saíra, corrigido em **v0.6.5**
+  (`hideNext = challengeMode`) + MD-21 (veredito no prompt). Validado no device:
+  intervalo mostra "Próxima: 🎯 adivinhe!", prompt vira "Acertou! ✓ · Próxima…".
+  Lição de processo: a Gate 1 deve capturar **sequência de transição** por ação,
+  não só estados finais — estático não pega vazamento temporal. MD-22 (cross-fade)
+  fica 🟢 aberto p/ v0.6.6.

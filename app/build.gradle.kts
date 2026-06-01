@@ -27,8 +27,8 @@ android {
         // 2020+ flagship) are >= API 29, so this is no practical loss.
         minSdk = 29
         targetSdk = 35
-        versionCode = 16
-        versionName = "0.6.4"
+        versionCode = 17
+        versionName = "0.6.5"
 
         buildConfigField("String", "GOOGLE_AI_API_KEY", "\"$googleApiKey\"")
 

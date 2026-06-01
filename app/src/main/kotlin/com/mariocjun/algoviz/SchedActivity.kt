@@ -383,13 +383,18 @@ private fun SchedScreen() {
         Spacer(Modifier.height(10.dp))
         StatusStrip(
             r, currentT, accent,
-            hideNext = challengePendingId != null,
+            hideNext = challengeMode,   // hide "Próxima:" the whole time the mode is on — not only during the prompt — so the answer never leaks in the gap between questions
             challengeScore = if (challengeMode) challengeScore else -1,
             challengeTotal = challengeTotal,
         )
         Spacer(Modifier.height(10.dp))
         if (challengePendingId != null) {
-            ChallengePrompt(algoIdx = algoIdx, algoName = r.algo, nextTick = currentT + 1)
+            ChallengePrompt(
+                algoIdx = algoIdx, algoName = r.algo, nextTick = currentT + 1,
+                pickedId = challengePickedId,
+                correctName = r.tasks.firstOrNull { it.id == challengePendingId }?.name,
+                wasCorrect = challengePickedId != null && challengePickedId == challengePendingId,
+            )
             Spacer(Modifier.height(8.dp))
         }
         TaskPills(
@@ -440,7 +445,7 @@ private fun SchedScreen() {
             Spacer(Modifier.height(10.dp))
             StatusStrip(
                 r, currentT, accent,
-                hideNext = challengePendingId != null,
+                hideNext = challengeMode,   // hide "Próxima:" the whole time the mode is on — not only during the prompt — so the answer never leaks in the gap between questions
                 challengeScore = if (challengeMode) challengeScore else -1,
                 challengeTotal = challengeTotal,
             )
@@ -449,7 +454,12 @@ private fun SchedScreen() {
             GanttLegend()
             Spacer(Modifier.height(6.dp))
             if (challengePendingId != null) {
-                ChallengePrompt(algoIdx = algoIdx, algoName = r.algo, nextTick = currentT + 1)
+                ChallengePrompt(
+                algoIdx = algoIdx, algoName = r.algo, nextTick = currentT + 1,
+                pickedId = challengePickedId,
+                correctName = r.tasks.firstOrNull { it.id == challengePendingId }?.name,
+                wasCorrect = challengePickedId != null && challengePickedId == challengePendingId,
+            )
                 Spacer(Modifier.height(8.dp))
             }
             TaskPills(
@@ -858,16 +868,28 @@ private fun ChallengeChip(enabled: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun ChallengePrompt(algoIdx: Int, algoName: String, nextTick: Int) {
+private fun ChallengePrompt(
+    algoIdx: Int, algoName: String, nextTick: Int,
+    pickedId: Int? = null,          // non-null once the student answered → show the verdict
+    correctName: String? = null,    // name of the right task (for the "Era X" reveal)
+    wasCorrect: Boolean = false,
+) {
     // Recap the algorithm's rule at the moment of decision (MD-9) so the student
     // doesn't have to have opened the ℹ card first.
     val rule = heuristicFor(algoIdx).caption
+    val answered = pickedId != null
+    // Border/verdict colour follows state: neutral while asking, green/red after.
+    val edge = when {
+        answered && wasCorrect -> ARRIVAL_GREEN
+        answered -> FINISH_RED
+        else -> ACCENT
+    }
     Box(
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
             .background(INK_PANEL)
-            .border(1.dp, ACCENT.copy(alpha = 0.45f), RoundedCornerShape(16.dp))
+            .border(1.dp, edge.copy(alpha = 0.55f), RoundedCornerShape(16.dp))
             .padding(12.dp),
     ) {
         Column {
@@ -877,20 +899,35 @@ private fun ChallengePrompt(algoIdx: Int, algoName: String, nextTick: Int) {
                 style = MaterialTheme.typography.labelMedium,
             )
             Spacer(Modifier.height(2.dp))
-            Text(
-                "Qual tarefa a CPU escolhe agora?",
-                color = INK_TEXT,
-                fontWeight = FontWeight.Bold,
-                style = MaterialTheme.typography.titleSmall,
-            )
-            Spacer(Modifier.height(4.dp))
-            // Explicit gesture signifier (MD-2): kills the tap-vs-drag ambiguity.
-            Text(
-                "👆 Toque na tarefa destacada que você acha que entra",
-                color = ACCENT,
-                fontWeight = FontWeight.Medium,
-                style = MaterialTheme.typography.labelMedium,
-            )
+            if (!answered) {
+                // ---- Question state ----
+                Text(
+                    "Qual tarefa a CPU escolhe agora?",
+                    color = INK_TEXT, fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                Spacer(Modifier.height(4.dp))
+                // Explicit gesture signifier (MD-2): kills the tap-vs-drag ambiguity.
+                Text(
+                    "👆 Toque na tarefa destacada que você acha que entra",
+                    color = ACCENT, fontWeight = FontWeight.Medium,
+                    style = MaterialTheme.typography.labelMedium,
+                )
+            } else {
+                // ---- Verdict state (MD-15): closes the loop + feed-forwards the next
+                // question, instead of leaving a stale "toque na tarefa" instruction. ----
+                Text(
+                    if (wasCorrect) "Acertou! ✓" else "Era ${correctName ?: "?"} ✗",
+                    color = edge, fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Próxima pergunta em instantes…",
+                    color = INK_TEXT_DIM, fontWeight = FontWeight.Medium,
+                    style = MaterialTheme.typography.labelMedium,
+                )
+            }
         }
     }
 }
