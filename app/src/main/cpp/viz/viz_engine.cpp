@@ -26,7 +26,10 @@ int VizEngine::fill(int* buf, int cap) {
     if (mode_ == 0) {
         const std::vector<int>& d = single_.data();
         const int n = static_cast<int>(d.size());
-        const int need = 10 + n;
+        // Buffer layout (mode 0):
+        //   [0=mode, 1=n, 2=hi_a, 3=hi_b, 4=finished, 5=compares, 6=swaps,
+        //    7=writes, 8=steps, 9=draw_mode, 10=last_step_kind, 11..11+n-1=values]
+        const int need = 11 + n;
         if (cap < need) return 0;
         buf[0] = 0;
         buf[1] = n;
@@ -38,7 +41,8 @@ int VizEngine::fill(int* buf, int cap) {
         buf[7] = static_cast<int>(single_.writes());
         buf[8] = static_cast<int>(single_.total_steps());
         buf[9] = single_.draw_mode() ? 1 : 0;
-        for (int i = 0; i < n; ++i) buf[10 + i] = d[static_cast<std::size_t>(i)];
+        buf[10] = static_cast<int>(single_.last_step_kind());  // 0=Compare 1=Swap 2=Set 3=Pivot
+        for (int i = 0; i < n; ++i) buf[11 + i] = d[static_cast<std::size_t>(i)];
         return need;
     }
 

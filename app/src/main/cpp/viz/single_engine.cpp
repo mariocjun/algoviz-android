@@ -28,6 +28,7 @@ void SingleEngine::rebuild_generator() {
     finished_timer_ = 0.0f;
     hi_a_ = hi_b_ = -1;
     compares_ = swaps_ = writes_ = steps_ = 0;
+    last_step_kind_ = algoviz::StepKind::Compare;
     undo_.clear();
     redo_.clear();
     slow_accum_ = 0.0f;
@@ -81,6 +82,7 @@ void SingleEngine::paint(int idx, float v01) {
 }
 
 void SingleEngine::account(const Step& s, int delta) {
+    last_step_kind_ = s.kind;
     switch (s.kind) {
         case StepKind::Compare: compares_ += delta; hi_a_ = s.i; hi_b_ = s.j; break;
         case StepKind::Swap:    swaps_ += delta;    hi_a_ = s.i; hi_b_ = s.j; break;

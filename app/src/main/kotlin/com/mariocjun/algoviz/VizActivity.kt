@@ -10,6 +10,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -55,6 +57,8 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -68,6 +72,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -197,6 +202,7 @@ private fun VizScreen() {
     var scaleNotes by remember { mutableIntStateOf(5) }   // notes/octave of the active scale
     var degreeColor by remember { mutableStateOf(true) }  // highlight chord tones (root/3rd/5th)
     var moodColor by remember { mutableStateOf(true) }    // mode-mood brightness/saturation
+    var lastStepKind by remember { mutableIntStateOf(0) } // 0=Compare 1=Swap 2=Set 3=Pivot
 
     // AI Assistant state
     val gemini = remember { GeminiAssistant() }
@@ -230,10 +236,13 @@ private fun VizScreen() {
                 last = now
                 VizBridge.nativeUpdate(dt)
                 val count = VizBridge.nativeFill(buffer)
-                stats = if (count > 0 && ints.get(0) == 0) {
-                    "cmp ${fmt(ints.get(5))}  swap ${fmt(ints.get(6))}  " +
+                if (count > 0 && ints.get(0) == 0) {
+                    stats = "cmp ${fmt(ints.get(5))}  swap ${fmt(ints.get(6))}  " +
                         "wr ${fmt(ints.get(7))}  steps ${fmt(ints.get(8))}"
-                } else ""
+                    lastStepKind = ints.get(10)   // buf[10] = last_step_kind (0=Cmp 1=Swap 2=Set 3=Pivot)
+                } else if (count > 0) {
+                    stats = ""
+                }
                 // Sort-completion detector (single: finished flag; race: every
                 // lane finished) → lightning flash + a distinct audio flourish.
                 val done = count > 0 && (
@@ -264,27 +273,38 @@ private fun VizScreen() {
     val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
 
     val canvas: @Composable (Modifier) -> Unit = { mod ->
-        VizCanvas(
-            modifier = mod,
-            buffer = buffer,
-            ints = ints,
-            algoNames = algoNames,
-            measurer = measurer,
-            drawMode = drawMode,
-            frame = frame,
-            flash = flash,
-            onDoubleTap = { playing = !playing; VizBridge.nativeTogglePlay() },
-            onSpeed = { d -> speed = (speed + d).coerceIn(1, 512); VizBridge.nativeSetSpeed(speed) },
-            onPaint = { idx, v01 -> VizBridge.nativePaint(idx, v01) },
-            onPlayNote = { v01 -> VizBridge.nativePlayNote(v01) },
-            rewinding = rewinding,
-            onRewindActive = { active -> rewinding = active; if (active) playing = false },
-            onRewindStep = { VizBridge.nativeStep(-1) },
-            noteCount = scaleNotes,
-            degreeOn = degreeColor,
-            moodOn = moodColor,
-            mood = SCALE_MOOD.getOrElse(scaleIdx) { 0.7f },
-        )
+        Box(mod) {
+            VizCanvas(
+                modifier = Modifier.fillMaxSize(),
+                buffer = buffer,
+                ints = ints,
+                algoNames = algoNames,
+                measurer = measurer,
+                drawMode = drawMode,
+                frame = frame,
+                flash = flash,
+                onDoubleTap = { playing = !playing; VizBridge.nativeTogglePlay() },
+                onSpeed = { d -> speed = (speed + d).coerceIn(1, 512); VizBridge.nativeSetSpeed(speed) },
+                onPaint = { idx, v01 -> VizBridge.nativePaint(idx, v01) },
+                onPlayNote = { v01 -> VizBridge.nativePlayNote(v01) },
+                rewinding = rewinding,
+                onRewindActive = { active -> rewinding = active; if (active) playing = false },
+                onRewindStep = { VizBridge.nativeStep(-1) },
+                noteCount = scaleNotes,
+                degreeOn = degreeColor,
+                moodOn = moodColor,
+                mood = SCALE_MOOD.getOrElse(scaleIdx) { 0.7f },
+                lastStepKind = lastStepKind,
+            )
+            // Pseudocode panel — floats top-start, only in single mode
+            if (mode == 0 && controlsOpen) {
+                PseudocodePanel(
+                    algoIdx = algoIdx,
+                    stepKind = lastStepKind,
+                    modifier = Modifier.align(Alignment.TopStart).padding(10.dp),
+                )
+            }
+        }
     }
 
     val panel: @Composable (Modifier) -> Unit = { mod ->
@@ -414,6 +434,7 @@ private fun VizCanvas(
     degreeOn: Boolean,
     moodOn: Boolean,
     mood: Float,
+    lastStepKind: Int = 0,
 ) {
     Canvas(
         modifier
@@ -425,7 +446,7 @@ private fun VizCanvas(
                             val n = ints.get(1)
                             if (n > 0) {
                                 val idx = (pos.x / size.width.toFloat() * n).toInt().coerceIn(0, n - 1)
-                                onPlayNote(ints.get(10 + idx).toFloat() / n)
+                                onPlayNote(ints.get(11 + idx).toFloat() / n)
                             }
                         }
                     },
@@ -460,25 +481,38 @@ private fun VizCanvas(
             }
     ) {
         if (frame < 0L) return@Canvas   // reference `frame` so the draw re-runs each tick
-        if (ints.get(0) == 0) drawSingle(ints, noteCount, degreeOn, moodOn, mood)
+        if (ints.get(0) == 0) drawSingle(ints, noteCount, degreeOn, moodOn, mood, lastStepKind)
         else drawRace(ints, algoNames, measurer, noteCount, degreeOn, moodOn, mood)
         if (flash > 0f) drawRect(color = Color.White, size = size, alpha = (flash * 0.85f).coerceIn(0f, 1f))
         if (rewinding) drawVhs(frame, measurer)
     }
 }
 
+// Semantic active-bar colours keyed by StepKind (0=Compare 1=Swap 2=Set 3=Pivot).
+// Replaces the plain white highlight so the bar colour tells the student what
+// the algorithm is doing right now, not just where it's looking.
+private val STEP_COLORS = arrayOf(
+    Color(0xFF4296FA),   // Compare — electric blue   ("comparing these two")
+    Color(0xFFE08A2E),   // Swap    — amber/orange    ("exchanging positions")
+    Color(0xFF9B5DE5),   // Set     — purple           ("writing a value back")
+    Color(0xFFE8B62E),   // Pivot   — gold             ("this is the pivot")
+)
+
 private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawSingle(
     ints: java.nio.IntBuffer, noteCount: Int, degreeOn: Boolean, moodOn: Boolean, mood: Float,
+    lastStepKind: Int = 0,
 ) {
     val n = ints.get(1)
     if (n <= 0) return
     val hiA = ints.get(2); val hiB = ints.get(3); val finished = ints.get(4) == 1
+    // Values now start at buf[11] (buf[10] = last_step_kind was added in v0.6.0).
     val w = size.width / n
+    val activeCol = STEP_COLORS.getOrElse(lastStepKind) { Color.White }
     for (i in 0 until n) {
-        val v = ints.get(10 + i)
+        val v = ints.get(11 + i)
         val v01 = v.toFloat() / n
         val h = v01 * size.height
-        val col = if (!finished && (i == hiA || i == hiB)) Color.White
+        val col = if (!finished && (i == hiA || i == hiB)) activeCol
                   else barColor(v01, finished, noteCount, degreeOn, moodOn, mood)
         drawRect(col, Offset(i * w, size.height - h), Size(maxOf(w - 1f, 1f), h))
     }
@@ -754,6 +788,98 @@ private fun StepperRow(label: String, value: Int, lo: Int, hi: Int, step: Int, o
         Button(onClick = { onChange((value + step).coerceAtMost(hi)) },
             modifier = Modifier.semantics { contentDescription = "increase $label" }) {
             Icon(Icons.Filled.Add, contentDescription = null)
+        }
+    }
+}
+
+// ---- Pseudocode panel --------------------------------------------------------
+//
+// A compact glass card floating over the canvas top-start corner.
+// Each algorithm has 4–5 lines of readable pseudocode; the line that
+// matches the current step kind (Compare / Swap / Set / Pivot) is
+// highlighted with the same semantic colour used for the active bars.
+// No extra button needed — it updates live with every step.
+
+private data class PseudoLine(
+    val text: String,
+    val kind: Int,   // StepKind int (0=Compare 1=Swap 2=Set 3=Pivot), -1 = structural/always dim
+)
+
+// Pseudocodes indexed by sort algorithm (Sorts tuple order from sort_registry.h):
+// 0=Bubble 1=Cocktail 2=Insertion 3=Shell 4=Selection 5=Quick 6=Merge 7=Heap
+private val PSEUDOCODES: Array<List<PseudoLine>> = arrayOf(
+    listOf(  // 0 Bubble
+        PseudoLine("para j = 0 até n−1−i", -1),
+        PseudoLine("  se a[j] > a[j+1]", 0),
+        PseudoLine("    troca a[j] ↔ a[j+1]", 1),
+    ),
+    listOf(  // 1 Cocktail (bidirecional)
+        PseudoLine("varredura esquerda→direita", -1),
+        PseudoLine("  se a[j] > a[j+1]", 0),
+        PseudoLine("    troca a[j] ↔ a[j+1]", 1),
+        PseudoLine("varredura direita→esquerda", -1),
+    ),
+    listOf(  // 2 Insertion
+        PseudoLine("key = a[i]", -1),
+        PseudoLine("enquanto a[j] > key", 0),
+        PseudoLine("  a[j+1] = a[j]   ← desloca", 2),
+        PseudoLine("a[j+1] = key      ← insere", 2),
+    ),
+    listOf(  // 3 Shell
+        PseudoLine("para gap = n/2 → 1", -1),
+        PseudoLine("  se a[i] > a[i−gap]", 0),
+        PseudoLine("    troca a[i] ↔ a[i−gap]", 1),
+    ),
+    listOf(  // 4 Selection
+        PseudoLine("min = i", -1),
+        PseudoLine("  se a[j] < a[min]", 0),
+        PseudoLine("    min = j", -1),
+        PseudoLine("troca a[i] ↔ a[min]", 1),
+    ),
+    listOf(  // 5 Quick
+        PseudoLine("pivot = a[mid]", 3),
+        PseudoLine("enquanto a[lo] < pivot", 0),
+        PseudoLine("enquanto a[hi] > pivot", 0),
+        PseudoLine("troca a[lo] ↔ a[hi]", 1),
+    ),
+    listOf(  // 6 Merge (bottom-up)
+        PseudoLine("divide em blocos de tamanho w", -1),
+        PseudoLine("  se esq[i] ≤ dir[j]", 0),
+        PseudoLine("    a[k] = esq[i]   ← copia", 2),
+        PseudoLine("    a[k] = dir[j]   ← copia", 2),
+    ),
+    listOf(  // 7 Heap
+        PseudoLine("constrói max-heap", -1),
+        PseudoLine("  se a[filho] > a[pai]", 0),
+        PseudoLine("    troca a[i] ↔ a[largest]", 1),
+        PseudoLine("extrai raiz → fim", -1),
+    ),
+)
+
+@Composable
+private fun PseudocodePanel(algoIdx: Int, stepKind: Int, modifier: Modifier = Modifier) {
+    val lines = PSEUDOCODES.getOrNull(algoIdx) ?: return
+    val panelBg = Color(0xFF12121A).copy(alpha = 0.82f)
+    val dimText = Color(0xFF9A9AA4)
+    Column(
+        modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(panelBg)
+            .border(1.dp, Color.White.copy(alpha = 0.07f), RoundedCornerShape(12.dp))
+            .padding(horizontal = 10.dp, vertical = 7.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        lines.forEach { line ->
+            val active = line.kind == stepKind && line.kind >= 0
+            val color = if (active) STEP_COLORS.getOrElse(stepKind) { Color.White }
+                        else dimText.copy(alpha = if (line.kind == -1) 0.45f else 0.72f)
+            Text(
+                text = line.text,
+                color = color,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 11.sp,
+                fontWeight = if (active) FontWeight.Bold else FontWeight.Normal,
+            )
         }
     }
 }

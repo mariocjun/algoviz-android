@@ -55,6 +55,9 @@ public:
     long long writes() const { return writes_; }
     long long total_steps() const { return steps_; }
     const std::vector<int>& data() const { return data_; }
+    // Kind of the last step yielded (Compare/Swap/Set/Pivot) — used by the JNI
+    // layer to drive pseudocode highlighting and semantic bar colours.
+    algoviz::StepKind last_step_kind() const { return last_step_kind_; }
 
     // Audio hook: returns a note value in [0,1] once if a step occurred since
     // the last call, else -1.
@@ -94,6 +97,8 @@ private:
     long long swaps_ = 0;
     long long writes_ = 0;
     long long steps_ = 0;
+
+    algoviz::StepKind last_step_kind_ = algoviz::StepKind::Compare;
 
     bool note_pending_ = false;
     float note01_ = -1.0f;
