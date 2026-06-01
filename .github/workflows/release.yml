@@ -31,6 +31,12 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
 
+      # The Gradle wrapper is gitignored, so the CI checkout has no gradlew.
+      # Generate it with 9.5.0 (AGP 9.3.0-alpha09 requires Gradle 9+; the old
+      # 8.7 wrapper failed at com.android.internal.version-check).
+      - name: Generate Gradle wrapper
+        run: gradle wrapper --gradle-version 9.5.0 --distribution-type bin
+
       - name: Build release APK
         run: ./gradlew assembleRelease --no-daemon
 
