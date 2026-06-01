@@ -1,21 +1,10 @@
-// MainActivity — user-facing entry. Loads libalgoviz.so, drives the
-// JNI bridge that returns benchmark / sensor / camera / hwcap JSON, and
-// handles crash-dump propagation.
+// MainActivity — Profiler mini-app (rewritten to Compose, v0.6.2).
+// All business logic (native calls, paste.rs upload, URL history, crash dump)
+// is unchanged — only the UI layer migrated from programmatic LinearLayout to
+// Compose Material 3, matching the visual language of the rest of the app.
 //
-// UI layout:
-//   url history:  always-visible scrollable history of upload URLs
-//   filter row:   [ filter text input ] [ Run ]
-//   info row:     [ HW caps ] [ Sensors ] [ Cameras ]
-//   action row:   [ Upload last result ]
-//   output:       scrollable monospace TextView (selectable)
-//
-// 'Upload' POSTs the latest output to paste.rs. The returned URL is:
-//   1. Copied to the system clipboard automatically.
-//   2. Prepended to a persistent 'Recent uploads' header that survives
-//      subsequent Run taps (so you don't lose URLs when starting a new
-//      benchmark).
-//   3. Appended to a log file in filesDir/upload-log.txt.
-
+// contentDescription values (btn_run, btn_hwcaps, btn_sensors, btn_cameras,
+// btn_upload, btn_viz, field_filter) are preserved for UI automation.
 package com.mariocjun.algoviz
 
 import android.content.ClipData
@@ -23,22 +12,59 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
-import android.text.method.LinkMovementMethod
-import android.text.method.ScrollingMovementMethod
-import android.view.Gravity
-import android.view.View
-import android.view.ViewGroup.LayoutParams.MATCH_PARENT
-import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
-import android.widget.Button
-import android.widget.EditText
-import android.widget.LinearLayout
-import android.widget.ScrollView
-import android.widget.TextView
 import android.widget.Toast
-import androidx.appcompat.app.AppCompatActivity
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowCompat
-import androidx.core.view.WindowInsetsCompat
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -54,12 +80,36 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-class MainActivity : AppCompatActivity() {
+// Compose state (Activity-owned so business logic methods can update them
+// without needing a Composable scope).
+private val BG        = Color(0xFF161618)
+private val PANEL     = Color(0xFF202023)
+private val PANEL_HI  = Color(0xFF2A2A2E)
+private val LINE      = Color(0xFF3A3A40)
+private val TXT       = Color(0xFFF2F2F4)
+private val TXT_DIM   = Color(0xFF9A9AA2)
+private val ACCENT    = Color(0xFF4296FA)
+private val CODE_FG   = Color(0xFFCFD0D4)
+
+// Named benchmark chips: display name → filter string passed to nativeRunBenchmarks.
+private val BENCHMARKS = listOf(
+    "Padrão"     to "",
+    "Stream"     to "stream",
+    "Latência"   to "latency",
+    "NEON FMA"   to "neon_fma",
+    "SDOT int8"  to "dot_int8",
+    "i8mm"       to "i8mm",
+    "SVE2"       to "sve2",
+    "PMU"        to "perf_counters",
+    "Sustentado" to "sustained",
+    "Sort"       to "sort",
+)
+
+class MainActivity : ComponentActivity() {
 
     companion object {
         init { System.loadLibrary("algoviz") }
-        private const val PADDING_DP = 12
-        private const val PASTE_ENDPOINT = "https://paste.rs/"
+        private const val PASTE_ENDPOINT  = "https://paste.rs/"
         private const val MAX_URL_HISTORY = 8
     }
 
@@ -69,158 +119,56 @@ class MainActivity : AppCompatActivity() {
     private external fun nativeEnumerateCameras(): String
     private external fun nativeHwcaps(): String
 
-    private lateinit var urlHistoryView: TextView
-    private lateinit var output: TextView
-    private lateinit var filterField: EditText
-    private lateinit var runBtn: Button
-    private lateinit var hwBtn: Button
-    private lateinit var sensorsBtn: Button
-    private lateinit var camerasBtn: Button
-    private lateinit var uploadBtn: Button
-
-    private val urlHistory: ArrayDeque<String> = ArrayDeque()
-    private var lastJson: String = ""
-    private var lastKind: String = ""
+    // Compose state — mutated from business-logic methods (always on Main thread).
+    private val outputText    = mutableStateOf("")
+    private val isBusy        = mutableStateOf(false)
+    private val uploadEnabled = mutableStateOf(false)
+    private val urlHistory    = mutableStateListOf<String>()
+    private var lastJson      = ""
+    private var lastKind      = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        WindowCompat.setDecorFitsSystemWindows(window, false)   // edge-to-edge (targetSdk 35)
+        enableEdgeToEdge()
         nativeSetCrashDir(filesDir.absolutePath)
-        setContentView(buildUi())
         loadUrlHistory()
+        setContent {
+            MaterialTheme(
+                colorScheme = darkColorScheme(
+                    background = BG, surface = PANEL,
+                    primary = ACCENT, onPrimary = Color.White,
+                    onBackground = TXT, onSurface = TXT,
+                ),
+            ) {
+                Surface(color = BG) {
+                    AutoCloseGuard {
+                        Box(Modifier.safeDrawingPadding()) {
+                            ProfilerScreen(
+                                output        = outputText.value,
+                                isBusy        = isBusy.value,
+                                uploadEnabled = uploadEnabled.value,
+                                urlHistory    = urlHistory,
+                                onRun         = { filter -> triggerBenchmarks(filter) },
+                                onHwCaps      = { triggerJob("hwcaps") },
+                                onSensors     = { triggerJob("sensors") },
+                                onCameras     = { triggerJob("cameras") },
+                                onUpload      = { uploadLast() },
+                                onViz         = { startActivity(Intent(this, VizActivity::class.java)) },
+                            )
+                        }
+                    }
+                }
+            }
+        }
         showInitialBanner()
         checkForPreviousCrash()
-    }
-
-    // -- UI ------------------------------------------------------------------
-
-    private fun buildUi(): View {
-        val padPx = (PADDING_DP * resources.displayMetrics.density).toInt()
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(padPx, padPx, padPx, padPx)
-        }
-        // Edge-to-edge is enforced at targetSdk 35: pad the root by the
-        // system-bar + cutout insets so nothing draws under the status/nav bars.
-        ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
-            val bars = insets.getInsets(
-                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
-            v.setPadding(padPx + bars.left, padPx + bars.top, padPx + bars.right, padPx + bars.bottom)
-            insets
-        }
-
-        // Row 0: persistent URL history (sticky at top, survives Run taps)
-        urlHistoryView = TextView(this).apply {
-            textSize = 11f
-            typeface = android.graphics.Typeface.MONOSPACE
-            setTextIsSelectable(true)
-            movementMethod = LinkMovementMethod.getInstance()
-            autoLinkMask = android.text.util.Linkify.WEB_URLS
-            text = "(no uploads yet)"
-            setPadding(0, 0, 0, padPx / 2)
-        }
-        root.addView(urlHistoryView)
-
-        // Row 1: filter input + Run button
-        val filterRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
-        }
-        filterField = EditText(this).apply {
-            hint = "filter (empty = default suite; e.g. 'stream' or 'i8mm,sve2')"
-            textSize = 12f
-            layoutParams = LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f)
-            isSingleLine = true
-            // Stable test locator — UI automation finds this by content-desc,
-            // never by pixel coordinates, so it survives layout/resolution changes.
-            contentDescription = "field_filter"
-        }
-        runBtn = btn("Run", "btn_run") { triggerBenchmarks(filterField.text.toString().trim()) }
-        runBtn.layoutParams = LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT)
-        filterRow.addView(filterField)
-        filterRow.addView(runBtn)
-        root.addView(filterRow)
-
-        // Row 2: HW caps / Sensors / Cameras (info buttons)
-        val infoRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
-        }
-        hwBtn      = btn("HW caps", "btn_hwcaps")   { triggerJob("hwcaps") }
-        sensorsBtn = btn("Sensors", "btn_sensors")  { triggerJob("sensors") }
-        camerasBtn = btn("Cameras", "btn_cameras")  { triggerJob("cameras") }
-        for (b in listOf(hwBtn, sensorsBtn, camerasBtn)) {
-            b.layoutParams = LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f)
-            infoRow.addView(b)
-        }
-        root.addView(infoRow)
-
-        // Row 2.5: Visualize — launches the Compose sort visualizer (VizActivity).
-        val vizBtn = btn("Visualize sorts ▶", "btn_viz") {
-            startActivity(Intent(this, VizActivity::class.java))
-        }.apply {
-            layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
-        }
-        root.addView(vizBtn)
-
-        // Row 3: Upload button (full-width)
-        uploadBtn = btn("Upload last result", "btn_upload") { uploadLast() }.apply {
-            layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
-            isEnabled = false
-        }
-        root.addView(uploadBtn)
-
-        // Output area
-        val scroll = ScrollView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f)
-            isVerticalScrollBarEnabled = true
-        }
-        output = TextView(this).apply {
-            textSize = 10f
-            typeface = android.graphics.Typeface.MONOSPACE
-            movementMethod = ScrollingMovementMethod()
-            setTextIsSelectable(true)
-        }
-        scroll.addView(output)
-        root.addView(scroll)
-        return root
-    }
-
-    // testId becomes the View's contentDescription — a stable locator that
-    // UI automation (scripts/ui_tap.py) matches against, so taps don't depend
-    // on pixel coordinates or on the visible label text.
-    private fun btn(label: String, testId: String, onTap: () -> Unit): Button =
-        Button(this).apply {
-            text = label
-            contentDescription = testId
-            gravity = Gravity.CENTER
-            setOnClickListener { onTap() }
-        }
-
-    private fun showInitialBanner() {
-        val externalDir = getExternalFilesDir(null)?.absolutePath ?: "(none)"
-        output.text = buildString {
-            append("Quick start:\n")
-            append("  1. Tap 'HW caps' first — shows kernel-permitted ARM extensions.\n")
-            append("  2. Tap 'Run' (empty filter) for the default suite (~15s).\n")
-            append("  3. To isolate one bench, type its name and tap Run.\n")
-            append("     Names: stream, latency, neon_fma, dot_int8, i8mm (opt-in),\n")
-            append("     sve2 (opt-in), perf_counters, sustained (opt-in).\n")
-            append("\n")
-            append("After a job, tap 'Upload last result' to share via paste.rs.\n")
-            append("URLs are auto-copied to clipboard AND kept in the history bar\n")
-            append("above so they survive subsequent Run taps.\n")
-            append("\n")
-            append("Local copies of every job also save to:\n")
-            append("  ").append(externalDir)
-        }
     }
 
     // -- Job dispatch --------------------------------------------------------
 
     private fun triggerBenchmarks(filter: String) {
         val label = if (filter.isEmpty()) "benchmarks" else "benchmarks[$filter]"
-        setBusy(true, "Running $label …")
+        setBusy(true, "Rodando $label …")
         lifecycleScope.launch(Dispatchers.IO) {
             val externalDir = getExternalFilesDir(null)?.absolutePath
             val raw = runCatching {
@@ -231,7 +179,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun triggerJob(kind: String) {
-        setBusy(true, "Running $kind …")
+        setBusy(true, "Rodando $kind …")
         lifecycleScope.launch(Dispatchers.IO) {
             val externalDir = getExternalFilesDir(null)?.absolutePath
             val raw = runCatching {
@@ -239,7 +187,7 @@ class MainActivity : AppCompatActivity() {
                     "hwcaps"  -> nativeHwcaps()
                     "sensors" -> nativeEnumerateSensors()
                     "cameras" -> nativeEnumerateCameras()
-                    else -> errorJson("triggerJob", "unknown kind: $kind")
+                    else      -> errorJson("triggerJob", "unknown kind: $kind")
                 }
             }.getOrElse { t -> errorJson("triggerJob", "${t.javaClass.simpleName}: ${t.message}") }
             finishJob(kind, raw, externalDir)
@@ -255,19 +203,15 @@ class MainActivity : AppCompatActivity() {
         withContext(Dispatchers.Main) {
             lastJson = raw
             lastKind = kind
-            output.text = pretty
-            uploadBtn.isEnabled = true
+            outputText.value = pretty
+            uploadEnabled.value = true
             setBusy(false, null)
         }
     }
 
     private fun setBusy(busy: Boolean, msg: String?) {
-        runBtn.isEnabled = !busy
-        hwBtn.isEnabled = !busy
-        sensorsBtn.isEnabled = !busy
-        camerasBtn.isEnabled = !busy
-        filterField.isEnabled = !busy
-        if (msg != null) output.text = msg
+        isBusy.value = busy
+        if (msg != null) outputText.value = msg
     }
 
     // -- Pretty printer ------------------------------------------------------
@@ -278,7 +222,7 @@ class MainActivity : AppCompatActivity() {
             when {
                 trimmed.startsWith("{") -> JSONObject(trimmed).toString(2)
                 trimmed.startsWith("[") -> JSONArray(trimmed).toString(2)
-                else -> raw
+                else                   -> raw
             }
         }.getOrElse {
             "$raw\n\n[prettify failed: ${(it as? JSONException)?.message ?: it.message}]"
@@ -290,33 +234,29 @@ class MainActivity : AppCompatActivity() {
 
     private fun escapeJsonValue(s: String): String =
         s.replace("\\", "\\\\").replace("\"", "\\\"")
-            .replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
+         .replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
 
     // -- Upload to paste.rs --------------------------------------------------
 
     private fun uploadLast() {
-        if (lastJson.isEmpty()) {
-            toast("Nothing to upload — run a job first.")
-            return
-        }
-        val payload = lastJson
+        if (lastJson.isEmpty()) { toast("Nada para enviar — rode um job primeiro."); return }
+        val payload   = lastJson
         val labelKind = lastKind
-        uploadBtn.isEnabled = false
-        output.append("\n\n--- uploading to paste.rs … ---\n")
+        uploadEnabled.value = false
+        outputText.value += "\n\n--- enviando para paste.rs … ---\n"
         lifecycleScope.launch(Dispatchers.IO) {
             val url = runCatching { httpPost(PASTE_ENDPOINT, payload) }
                 .getOrElse { "ERROR: ${it.javaClass.simpleName}: ${it.message}" }
             withContext(Dispatchers.Main) {
                 if (url.startsWith("http")) {
                     recordUpload(labelKind, url)
-                    output.append("URL: $url\nKind: $labelKind\n" +
-                            "(copied to clipboard; also in history bar above)\n")
-                    toast("Uploaded — URL copied to clipboard")
+                    outputText.value += "URL: $url\nKind: $labelKind\n(copiado para área de transferência; também no histórico acima)\n"
+                    toast("Enviado — URL copiada")
                 } else {
-                    output.append("$url\n")
-                    toast("Upload failed.")
+                    outputText.value += "$url\n"
+                    toast("Envio falhou.")
                 }
-                uploadBtn.isEnabled = true
+                uploadEnabled.value = true
             }
         }
     }
@@ -324,19 +264,17 @@ class MainActivity : AppCompatActivity() {
     private fun httpPost(endpoint: String, body: String): String {
         val conn = (URL(endpoint).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
-            doOutput = true
-            doInput = true
-            connectTimeout = 15_000
-            readTimeout = 15_000
+            doOutput = true; doInput = true
+            connectTimeout = 15_000; readTimeout = 15_000
             setRequestProperty("Content-Type", "text/plain; charset=utf-8")
-            setRequestProperty("User-Agent", "algoviz/0.4.0")
+            setRequestProperty("User-Agent", "algoviz/0.6.2")
         }
         try {
             conn.outputStream.use { os: OutputStream -> os.write(body.toByteArray(Charsets.UTF_8)) }
-            val code = conn.responseCode
+            val code   = conn.responseCode
             val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-            val text = stream.bufferedReader(Charsets.UTF_8).use { it.readText().trim() }
-            return if (code in 200..299) text else "ERROR ${code}: $text"
+            val text   = stream.bufferedReader(Charsets.UTF_8).use { it.readText().trim() }
+            return if (code in 200..299) text else "ERROR $code: $text"
         } finally {
             conn.disconnect()
         }
@@ -345,73 +283,222 @@ class MainActivity : AppCompatActivity() {
     // -- URL history persistence --------------------------------------------
 
     private fun recordUpload(kind: String, url: String) {
-        val ts = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
+        val ts    = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
         val entry = "[$ts] $kind  $url"
-        urlHistory.addFirst(entry)
+        urlHistory.add(0, entry)
         while (urlHistory.size > MAX_URL_HISTORY) urlHistory.removeLast()
-        renderUrlHistory()
-        // Auto-copy to system clipboard so the URL survives anything that
-        // happens to the in-app UI.
         runCatching {
             val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
             cm.setPrimaryClip(ClipData.newPlainText("paste.rs upload", url))
         }
-        // Append to persistent log so even crashing/uninstalling leaves a trace.
         runCatching {
             File(filesDir, "upload-log.txt")
                 .appendText("${SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())}  $kind  $url\n")
         }
     }
 
-    private fun renderUrlHistory() {
-        if (urlHistory.isEmpty()) {
-            urlHistoryView.text = "(no uploads yet)"
-            return
-        }
-        urlHistoryView.text = "Recent uploads (latest first):\n" +
-                urlHistory.joinToString("\n") { "  $it" }
-    }
-
     private fun loadUrlHistory() {
         val f = File(filesDir, "upload-log.txt")
-        if (!f.exists()) {
-            renderUrlHistory()
-            return
-        }
+        if (!f.exists()) return
         runCatching {
-            // Pull the last MAX_URL_HISTORY URL lines from the log.
             val lines = f.readLines().asReversed().take(MAX_URL_HISTORY)
-            urlHistory.clear()
             for (line in lines) {
-                // Format on disk: "YYYY-MM-DD HH:MM:SS  kind  url"
-                // Render as in-memory format (HH:MM:SS  kind  url).
                 val parts = line.split("  ", limit = 3)
                 val short = if (parts.size == 3) {
                     val timeOnly = parts[0].substringAfter(' ')
                     "[$timeOnly] ${parts[1]}  ${parts[2]}"
                 } else line
-                urlHistory.addLast(short)
+                urlHistory.add(short)
             }
         }
-        renderUrlHistory()
     }
 
-    // -- Crash dump from previous run ---------------------------------------
+    // -- Initial display & crash recovery -----------------------------------
+
+    private fun showInitialBanner() {
+        val externalDir = getExternalFilesDir(null)?.absolutePath ?: "(none)"
+        outputText.value = buildString {
+            appendLine("Início rápido:")
+            appendLine("  1. Toque em 'HW caps' — mostra extensões ARM do kernel.")
+            appendLine("  2. Toque em 'Run' (filtro vazio) para a suíte padrão (~15s).")
+            appendLine("  3. Ou escolha um chip de benchmark acima para isolar um teste.")
+            appendLine()
+            appendLine("Após o job, toque em 'Enviar resultado' para compartilhar via paste.rs.")
+            appendLine("A URL é copiada para a área de transferência e salva no histórico.")
+            appendLine()
+            append("Arquivos locais salvos em:\n  $externalDir")
+        }
+    }
 
     private fun checkForPreviousCrash() {
-        val dump = File(filesDir, "last-native-crash.json")
+        val dump    = File(filesDir, "last-native-crash.json")
         if (!dump.exists()) return
         val content = runCatching { dump.readText() }.getOrElse { return }
-        output.append("\n\n*** PREVIOUS NATIVE CRASH DETECTED ***\n")
-        output.append(prettify(content))
-        output.append("\n\nTap 'Upload last result' to share it for analysis.\n")
+        outputText.value += "\n\n*** CRASH NATIVO ANTERIOR DETECTADO ***\n" +
+            prettify(content) +
+            "\n\nToque em 'Enviar resultado' para compartilhar para análise.\n"
         lastJson = content
         lastKind = "native-crash"
-        uploadBtn.isEnabled = true
+        uploadEnabled.value = true
         dump.delete()
     }
 
-    private fun toast(s: String) {
-        Toast.makeText(this, s, Toast.LENGTH_LONG).show()
+    private fun toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_LONG).show()
+}
+
+// ---- Compose UI ------------------------------------------------------------
+
+@Composable
+private fun ProfilerScreen(
+    output: String,
+    isBusy: Boolean,
+    uploadEnabled: Boolean,
+    urlHistory: List<String>,
+    onRun: (String) -> Unit,
+    onHwCaps: () -> Unit,
+    onSensors: () -> Unit,
+    onCameras: () -> Unit,
+    onUpload: () -> Unit,
+    onViz: () -> Unit,
+) {
+    var filter by remember { mutableStateOf("") }
+    var selectedBench by remember { mutableIntStateOf(0) }   // 0 = "Padrão" (empty filter)
+
+    Column(
+        Modifier.fillMaxSize().padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Spacer(Modifier.height(6.dp))
+
+        // Header
+        Text("Profiler", style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold, color = TXT)
+        Text("benchmarks nativos · hardware do dispositivo",
+            style = MaterialTheme.typography.bodySmall, color = TXT_DIM)
+
+        // URL upload history
+        if (urlHistory.isNotEmpty()) {
+            UploadHistory(urlHistory)
+        }
+
+        // Benchmark chips — named selection replaces raw filter hint
+        Text("Benchmark", fontSize = 12.sp, color = TXT_DIM)
+        Row(
+            Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            BENCHMARKS.forEachIndexed { i, (label, value) ->
+                FilterChip(
+                    selected = i == selectedBench,
+                    onClick = { selectedBench = i; filter = value },
+                    label = { Text(label) },
+                    modifier = Modifier.semantics { contentDescription = "bench_$value" },
+                )
+            }
+        }
+
+        // Manual filter field — populated by chip tap, also editable directly
+        OutlinedTextField(
+            value = filter,
+            onValueChange = { filter = it; selectedBench = -1 },
+            label = { Text("Filtro manual") },
+            placeholder = { Text("vazio = suíte padrão; ex: stream, i8mm,sve2") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().semantics { contentDescription = "field_filter" },
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = ACCENT, unfocusedBorderColor = LINE,
+                focusedLabelColor = ACCENT, unfocusedLabelColor = TXT_DIM,
+                focusedTextColor = TXT, unfocusedTextColor = TXT,
+                cursorColor = ACCENT,
+            ),
+        )
+
+        // Primary action — Run
+        Button(
+            onClick = { onRun(filter) },
+            enabled = !isBusy,
+            modifier = Modifier.fillMaxWidth().semantics { contentDescription = "btn_run" },
+        ) {
+            if (isBusy) {
+                CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp,
+                    color = Color.White)
+                Spacer(Modifier.width(8.dp))
+                Text("Rodando…")
+            } else {
+                Icon(Icons.Filled.PlayArrow, contentDescription = null)
+                Spacer(Modifier.width(6.dp))
+                Text("Run", fontWeight = FontWeight.SemiBold)
+            }
+        }
+
+        // Secondary info queries
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = onHwCaps, enabled = !isBusy,
+                modifier = Modifier.weight(1f).semantics { contentDescription = "btn_hwcaps" }) {
+                Text("HW caps", fontSize = 13.sp)
+            }
+            OutlinedButton(onClick = onSensors, enabled = !isBusy,
+                modifier = Modifier.weight(1f).semantics { contentDescription = "btn_sensors" }) {
+                Text("Sensores", fontSize = 13.sp)
+            }
+            OutlinedButton(onClick = onCameras, enabled = !isBusy,
+                modifier = Modifier.weight(1f).semantics { contentDescription = "btn_cameras" }) {
+                Text("Câmeras", fontSize = 13.sp)
+            }
+        }
+
+        // Navigate to sort visualizer
+        OutlinedButton(
+            onClick = onViz,
+            modifier = Modifier.fillMaxWidth().semantics { contentDescription = "btn_viz" },
+        ) { Text("Visualizar sorts ▶") }
+
+        // Upload
+        OutlinedButton(
+            onClick = onUpload,
+            enabled = uploadEnabled,
+            modifier = Modifier.fillMaxWidth().semantics { contentDescription = "btn_upload" },
+        ) { Text("Enviar resultado (paste.rs)") }
+
+        // Output area — monospace, selectable, scrollable
+        Surface(
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+            color = Color(0xFF0D0D10),
+            shape = RoundedCornerShape(12.dp),
+            tonalElevation = 0.dp,
+        ) {
+            SelectionContainer(Modifier.fillMaxSize()) {
+                Text(
+                    text = output,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 10.sp,
+                    lineHeight = 15.sp,
+                    color = CODE_FG,
+                    modifier = Modifier.fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .padding(12.dp),
+                )
+            }
+        }
+
+        Spacer(Modifier.height(6.dp))
+    }
+}
+
+@Composable
+private fun UploadHistory(urlHistory: List<String>) {
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+            .background(PANEL)
+            .border(1.dp, LINE, RoundedCornerShape(12.dp))
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        Text("Uploads recentes", fontSize = 11.sp, color = TXT_DIM,
+            fontFamily = FontFamily.Monospace)
+        urlHistory.forEach { entry ->
+            Text(entry, fontSize = 10.sp, color = CODE_FG.copy(alpha = 0.85f),
+                fontFamily = FontFamily.Monospace, lineHeight = 14.sp)
+        }
     }
 }
