@@ -53,6 +53,7 @@ add_unit_test(test_json)
 add_unit_test(test_registry)
 add_unit_test(test_sorts)
 add_unit_test(test_sort_registry)
+add_unit_test(test_sched_random)
 add_unit_test(test_single_engine
     ${CMAKE_CURRENT_SOURCE_DIR}/../app/src/main/cpp/viz/single_engine.cpp)
 add_unit_test(test_race_engine

@@ -16,6 +16,7 @@ import android.content.res.Configuration
 import android.os.Bundle
 import android.view.HapticFeedbackConstants
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.animateColorAsState
@@ -106,19 +107,22 @@ import java.util.Locale
 
 // Pedagogical chip order: FCFS first (simplest), then RR, SJF, SRTF, PRIOc, PRIOp, PRIOd.
 // The native engine returns them as [FCFS=0, SJF=1, RR=2, SRTF=3, PRIOc=4, PRIOp=5, PRIOd=6].
-private val PEDAGOGICAL_ORDER = intArrayOf(0, 2, 1, 3, 4, 5, 6)
+internal val PEDAGOGICAL_ORDER = intArrayOf(0, 2, 1, 3, 4, 5, 6)
 
 // ---- Palette (sampled from the owner's ImGui "modern style" + the book) -------
 
-private val INK_BG = Color(0xFF161618)
-private val INK_PANEL = Color(0xFF202023)
-private val INK_PANEL_HI = Color(0xFF2A2A2E)
-private val INK_LINE = Color(0xFF3A3A40)
-private val INK_TEXT = Color(0xFFF2F2F4)
-private val INK_TEXT_DIM = Color(0xFF9A9AA2)
-private val ACCENT = Color(0xFF4296FA)
-private val ARRIVAL_GREEN = Color(0xFF3ECF6E)
-private val FINISH_RED = Color(0xFFF2554B)
+// Dusk palette (shared tokens in Palette.kt) — v0.6.7 premium redesign. The old
+// INK_* names stay as thin aliases so the many existing references don't churn;
+// new code can reference Dusk.* directly.
+private val INK_BG = Dusk.Background
+private val INK_PANEL = Dusk.Surface
+private val INK_PANEL_HI = Dusk.SurfaceHi
+private val INK_LINE = Dusk.Line
+private val INK_TEXT = Dusk.TextPrimary
+private val INK_TEXT_DIM = Dusk.TextDim
+private val ACCENT = Dusk.AccentTeal
+private val ARRIVAL_GREEN = Color(0xFF3ECF6E)   // semantic (Gantt legend) — kept
+private val FINISH_RED = Color(0xFFF2554B)       // semantic (Gantt legend) — kept
 
 private val TASK_COLORS = listOf(
     Color(0xFF3E7BFA), Color(0xFFE4C23B), Color(0xFF9B5DE5),
@@ -127,11 +131,8 @@ private val TASK_COLORS = listOf(
 )
 private fun taskColor(id: Int): Color = TASK_COLORS[((id - 1).coerceAtLeast(0)) % TASK_COLORS.size]
 
-private val ALGO_ACCENT = listOf(
-    Color(0xFF3E7BFA), Color(0xFF36B9B9), Color(0xFF9B5DE5), Color(0xFF35C46B),
-    Color(0xFFE0902E), Color(0xFFE8B62E), Color(0xFFE05A50),
-)
-private fun algoAccent(idx: Int): Color = ALGO_ACCENT.getOrElse(idx) { ACCENT }
+// Per-algorithm foil/accent now lives in the shared Dusk palette (pastel family).
+private fun algoAccent(idx: Int): Color = Dusk.algoAccent(idx)
 
 class SchedActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -234,10 +235,42 @@ object ChallengeIntro { var dismissed = false }
 
 // ---- Screen -------------------------------------------------------------------
 
+// Scheduler screens. B1 wires the new card carousel as the landing (Picker) that
+// routes into the existing Gantt flow (Game); B2 adds the Intro phase + the
+// Assistir/Desafio mode machine and retires AlgoChips/ChallengeChip.
+internal enum class SchedPhase { Picker, Game }
+
 @Composable
 private fun SchedScreen() {
     val algoNames = remember { runCatching { SchedBridge.nativeSchedListAlgos() }.getOrDefault(emptyArray()) }
-    var algoIdx by remember { mutableIntStateOf(0) }
+    var phase by remember { mutableStateOf(SchedPhase.Picker) }
+    var pickedAlgo by remember { mutableIntStateOf(0) }
+    when (phase) {
+        SchedPhase.Picker -> SchedPicker(algoNames) { pickedAlgo = it; phase = SchedPhase.Game }
+        SchedPhase.Game -> SchedGame(pickedAlgo, algoNames) { phase = SchedPhase.Picker }
+    }
+}
+
+// The premium landing: a vertical carousel of holographic algorithm cards.
+@Composable
+private fun SchedPicker(algoNames: Array<String>, onPick: (Int) -> Unit) {
+    Column(Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
+        Spacer(Modifier.height(8.dp))
+        Text("Escalonador", style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.SemiBold, color = INK_TEXT,
+            modifier = Modifier.padding(start = 4.dp))
+        Text("escolha um algoritmo", style = MaterialTheme.typography.bodyMedium,
+            color = INK_TEXT_DIM, modifier = Modifier.padding(start = 4.dp))
+        Spacer(Modifier.height(4.dp))
+        AlgoCarousel(names = algoNames, onPick = onPick, modifier = Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun SchedGame(initialAlgo: Int, algoNames: Array<String>, onBack: () -> Unit) {
+    // Hardware/system back returns to the card picker (not straight out of the app).
+    BackHandler { onBack() }
+    var algoIdx by remember { mutableIntStateOf(initialAlgo) }
     var result by remember { mutableStateOf<SchedResult?>(null) }
     var currentT by remember { mutableIntStateOf(0) }
     var playing by remember { mutableStateOf(false) }
@@ -266,7 +299,7 @@ private fun SchedScreen() {
         }
             .onFailure { error = it.message ?: it.javaClass.simpleName }
     }
-    LaunchedEffect(Unit) { load(0) }
+    LaunchedEffect(Unit) { load(initialAlgo) }
 
     // Run-to-complete plays the playhead forward tick-by-tick.
     // In challenge mode, pauses before any context switch and waits for the user's pick.
@@ -426,8 +459,12 @@ private fun SchedScreen() {
             Column(
                 Modifier.width(300.dp).fillMaxHeight().verticalScroll(rememberScrollState()),
             ) {
-                Text("Escalonador", style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.SemiBold, color = INK_TEXT)
+                Row(verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    BackChip(onBack)
+                    Text("Escalonador", style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.SemiBold, color = INK_TEXT)
+                }
                 Spacer(Modifier.height(10.dp))
                 GanttLegend()
                 Spacer(Modifier.height(6.dp))
@@ -437,8 +474,12 @@ private fun SchedScreen() {
     } else {
         Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
             Spacer(Modifier.height(8.dp))
-            Text("Escalonador", style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.SemiBold, color = INK_TEXT)
+            Row(verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                BackChip(onBack)
+                Text("Escalonador", style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.SemiBold, color = INK_TEXT)
+            }
             Spacer(Modifier.height(10.dp))
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -1100,15 +1141,31 @@ private fun GhostButton(
 
 // ---- Didactic heuristic explainer (the ℹ card) --------------------------------
 
-private enum class AnimMode { ARRIVAL, SIZE, PRIORITY, RR, AGING }
+// A clearly-tappable back chip → returns to the card picker. Uses the Box.clickable
+// pattern (verified to register taps here; a bare Text.clickable on the title did not).
+@Composable
+private fun BackChip(onBack: () -> Unit) {
+    Box(
+        Modifier.clip(RoundedCornerShape(50)).background(INK_PANEL)
+            .clickable { onBack() }
+            .padding(horizontal = 14.dp, vertical = 6.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text("‹", color = INK_TEXT, fontWeight = FontWeight.Bold,
+            style = MaterialTheme.typography.titleLarge)
+    }
+}
 
-private data class Heuristic(
+internal enum class AnimMode { ARRIVAL, SIZE, PRIORITY, RR, AGING }
+
+internal data class Heuristic(
     val title: String, val pick: String, val body: String, val tradeoff: String,
     val mode: AnimMode, val caption: String,
 )
 
 // Didactic, in Maziero's teaching spirit (faithful to Cap. 6; paraphrased).
-private fun heuristicFor(idx: Int): Heuristic = when (idx) {
+// internal so the card carousel (SchedCards.kt) reuses the same taglines/captions.
+internal fun heuristicFor(idx: Int): Heuristic = when (idx) {
     1 -> Heuristic("Como o SJF decide", "Entre as prontas, pega a de menor duração.",
         "Cooperativo: a escolhida roda até o fim. É o que dá o menor tempo médio de espera.",
         "Exige estimar a duração antes; tarefas longas podem ficar pra trás (inanição).",

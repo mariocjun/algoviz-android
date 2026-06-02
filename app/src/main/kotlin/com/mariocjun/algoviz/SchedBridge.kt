@@ -21,4 +21,15 @@ object SchedBridge {
      *     gantt:[{time,task_id}] }
      */
     external fun nativeSchedRunMaziero(algoIdx: Int): String
+
+    /**
+     * Runs a SEEDED RANDOM workload (the "Jogo" mode) through [algoIdx] and
+     * returns the same JSON shape as [nativeSchedRunMaziero]. Reproducible: the
+     * same (algoIdx, seed, difficulty) always yields the same schedule — so the
+     * "Desafio do Dia" (seed = epoch-day) and bug-repro are deterministic, and the
+     * generator rejects any workload that would hit the scheduler's coin-flip
+     * tiebreak. difficulty 1=beginner / 2=intermediate / 3+=chaos (task count,
+     * arrival spread, and the minimum number of dispatch decisions to predict).
+     */
+    external fun nativeSchedRunRandom(algoIdx: Int, seed: Long, difficulty: Int): String
 }

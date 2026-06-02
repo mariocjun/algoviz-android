@@ -8,10 +8,12 @@
 // only touches the JSON producer here, not the engine.
 #include "../bench/json.h"
 #include "sim.h"
+#include "sched_random.h"
 
 #include <jni.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -67,14 +69,9 @@ sched::System build_system(int algo_idx) {
     return sys;
 }
 
-std::string run_as_json(int algo_idx) {
-    if (algo_idx < 0 || algo_idx >= kAlgoCount) {
-        return std::string("{\"error\":\"unknown algo index\"}");
-    }
-    const AlgoCfg& cfg = kAlgos[algo_idx];
-    sched::System sys = build_system(algo_idx);
-    sched::run(sys);
-
+// Serializes a *finished* simulation to the JSON contract the Compose UI parses.
+// Shared by the Maziero (teaching) and random (game) producers.
+std::string serialize(const sched::System& sys, const char* label, int quantum) {
     std::vector<bench::Json> tasks;
     tasks.reserve(sys.tasks.size());
     for (const sched::Task& t : sys.tasks) {
@@ -101,8 +98,8 @@ std::string run_as_json(int algo_idx) {
     }
 
     bench::Json out;
-    out.kv("algo", cfg.label)
-       .kv("quantum", cfg.quantum)
+    out.kv("algo", label)
+       .kv("quantum", quantum)
        .kv("total_time", sys.time)
        .kv("preemptions", sys.preemptions)
        .kv("context_switches", sys.context_switches)
@@ -112,6 +109,33 @@ std::string run_as_json(int algo_idx) {
        .kv("tasks", tasks)
        .kv("gantt", gantt);
     return out.str();
+}
+
+std::string run_as_json(int algo_idx) {
+    if (algo_idx < 0 || algo_idx >= kAlgoCount) {
+        return std::string("{\"error\":\"unknown algo index\"}");
+    }
+    const AlgoCfg& cfg = kAlgos[algo_idx];
+    sched::System sys = build_system(algo_idx);
+    sched::run(sys);
+    return serialize(sys, cfg.label, cfg.quantum);
+}
+
+// ---- Random workload (the "Jogo" mode) ------------------------------------
+// The generator + its determinism/interestingness guarantees live in the NDK-free
+// sched_random.h (host-unit-tested). Here we only map the algo index to its
+// engine config and serialize the finished run.
+std::string run_random_as_json(int algo_idx, std::uint64_t seed, int difficulty) {
+    if (algo_idx < 0 || algo_idx >= kAlgoCount) {
+        return std::string("{\"error\":\"unknown algo index\"}");
+    }
+    const AlgoCfg& cfg = kAlgos[algo_idx];
+    sched::System sys = sched::generate_game(cfg.algo, cfg.quantum, seed, difficulty);
+    if (sys.tasks.empty()) {              // generator gave up → canonical fallback
+        sys = build_system(algo_idx);
+        sched::run(sys);
+    }
+    return serialize(sys, cfg.label, cfg.quantum);
 }
 
 }  // namespace
@@ -133,6 +157,14 @@ Java_com_mariocjun_algoviz_SchedBridge_nativeSchedListAlgos(JNIEnv* env, jobject
 JNIEXPORT jstring JNICALL
 Java_com_mariocjun_algoviz_SchedBridge_nativeSchedRunMaziero(JNIEnv* env, jobject /*thiz*/, jint algo_idx) {
     const std::string s = run_as_json(static_cast<int>(algo_idx));
+    return env->NewStringUTF(s.c_str());
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_mariocjun_algoviz_SchedBridge_nativeSchedRunRandom(
+        JNIEnv* env, jobject /*thiz*/, jint algo_idx, jlong seed, jint difficulty) {
+    const std::string s = run_random_as_json(
+        static_cast<int>(algo_idx), static_cast<std::uint64_t>(seed), static_cast<int>(difficulty));
     return env->NewStringUTF(s.c_str());
 }
 

@@ -39,6 +39,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
@@ -113,7 +114,20 @@ class HomeActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            MaterialTheme(colorScheme = darkColorScheme()) {
+            MaterialTheme(
+                // Dusk palette (Palette.kt) — the launcher matches the Scheduler's
+                // new premium surfaces. Tiles read primary/surfaceVariant from here.
+                colorScheme = darkColorScheme(
+                    background = Dusk.Background,
+                    surface = Dusk.Surface,
+                    surfaceVariant = Dusk.SurfaceHi,
+                    primary = Dusk.AccentTeal,
+                    onPrimary = Color.Black,
+                    onBackground = Dusk.TextPrimary,
+                    onSurface = Dusk.TextPrimary,
+                    onSurfaceVariant = Dusk.TextDim,
+                ),
+            ) {
                 Surface(color = MaterialTheme.colorScheme.background) {
                     AutoCloseGuard { Box(Modifier.safeDrawingPadding()) { HomeScreen() } }
                 }
