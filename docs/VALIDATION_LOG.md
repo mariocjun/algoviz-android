@@ -67,6 +67,15 @@ UX/qualidade do projeto.
 
 ---
 
+## Estados de produto (STD-*) — varredura heurística (ver `docs/RELEASE_PLAN.md`)
+Lacunas que o plano de transições/motion não cobria. **STD-1 🔴 Gemini/IA** (feature
+em produção viola Nielsen #9: erro colapsado no sucesso, sem cancelar/offline) ·
+**STD-2 🔴 empty states** · **STD-3 🔴 erro/retry** · **STD-6 🔴 i18n+moeda+headline
+hardcoded (bug)** · **STD-9 🔴 upload sem confirmação (privacidade)** · STD-4/5/7/8/10/11/12 🟡
+(loading, offline, a11y, responsividade, settings/persistência, design system, onboarding
+global) · STD-13/14 🟢. **Correção de rumo:** `object Progress` (persistência) sobe p/ a 1ª
+release — sem ela a retenção é falsa. TR-D6 reclassificado: esconde bug de placar acumulado.
+
 ## Semântica de representação temporal (ver `docs/UX_STUDY.md` §5)
 Eixo NOVO, levantado pelo dono — escapou de 3 reviews (motion ≠ semântica).
 
