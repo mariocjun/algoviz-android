@@ -314,7 +314,13 @@ private fun SchedScreen() {
         return
     }
 
-    val onBack: () -> Unit = { playing = false; if (currentT > 0) { currentT--; haptic() } }
+    // TR-D1: ◀ must NOT move currentT during a pending challenge (it would
+    // desync the prompt's "Tick N") — guard it like onFwd/onRun already are.
+    val onBack: () -> Unit = {
+        if (challengePendingId == null) {
+            playing = false; if (currentT > 0) { currentT--; haptic() }
+        }
+    }
     val onFwd: () -> Unit = {
         if (challengePendingId == null) {
             playing = false; if (currentT < r.totalTime) { currentT++; haptic() }
@@ -325,7 +331,9 @@ private fun SchedScreen() {
             if (currentT >= r.totalTime) currentT = 0; playing = !playing
         }
     }
-    val onReset: () -> Unit = { playing = false; currentT = 0 }
+    // TR-D6 (bug): the score only zeroed on algo switch, so re-running the same
+    // algorithm accumulated "8 of 6". Reset the per-round score when restarting.
+    val onReset: () -> Unit = { playing = false; currentT = 0; challengeScore = 0; challengeTotal = 0 }
 
     val onChallengePick: (Int) -> Unit = { taskId ->
         if (challengePendingId != null && challengePickedId == null) {
@@ -351,12 +359,14 @@ private fun SchedScreen() {
         }
     }
 
-    // Toggle challenge mode; on FIRST enable per session, open the onboarding
-    // sheet (resolves the no-onboarding / unclear-affordance findings MD-1..3).
+    // Toggle challenge mode. On first enable PER INSTALL (now persisted via
+    // Progress — MD-18), open the onboarding sheet; otherwise start playing right
+    // away so the first prompt appears on its own (TR-D2 — no dead activation gap).
     val onToggleChallenge: () -> Unit = {
         challengeMode = !challengeMode
         if (challengeMode) {
-            if (!ChallengeIntro.dismissed) showChallengeIntro = true
+            if (!Progress.challengeIntroDone) showChallengeIntro = true
+            else { if (currentT >= r.totalTime) currentT = 0; playing = true }
         } else {
             challengePendingId = null
             challengePickedId = null
@@ -400,12 +410,13 @@ private fun SchedScreen() {
         TaskPills(
             r = r,
             currentT = currentT,
+            algoIdx = algoIdx,
             challengePendingId = challengePendingId,
             challengePickedId = challengePickedId,
             onChallengePick = if (challengePendingId != null) onChallengePick else null,
         )
         Spacer(Modifier.height(if (rail) 14.dp else 12.dp))
-        Transport(accent, currentT > 0, currentT < r.totalTime, playing, onBack, onFwd, onRun, onReset, stacked = rail)
+        Transport(accent, currentT > 0, currentT < r.totalTime, playing, onBack, onFwd, onRun, onReset, stacked = rail, pending = challengePendingId != null)
     }
 
     if (landscape) {
@@ -465,19 +476,26 @@ private fun SchedScreen() {
             TaskPills(
                 r = r,
                 currentT = currentT,
+                algoIdx = algoIdx,
                 challengePendingId = challengePendingId,
                 challengePickedId = challengePickedId,
                 onChallengePick = if (challengePendingId != null) onChallengePick else null,
             )
             Spacer(Modifier.height(12.dp))
-            Transport(accent, currentT > 0, currentT < r.totalTime, playing, onBack, onFwd, onRun, onReset)
+            Transport(accent, currentT > 0, currentT < r.totalTime, playing, onBack, onFwd, onRun, onReset, pending = challengePendingId != null)
             Spacer(Modifier.height(10.dp))
         }
     }
 
     if (showInfo) HeuristicDialog(algoIdx) { showInfo = false }
     if (showChallengeIntro) {
-        ChallengeIntroSheet { ChallengeIntro.dismissed = true; showChallengeIntro = false }
+        ChallengeIntroSheet {
+            ChallengeIntro.dismissed = true       // session flag (kept for compatibility)
+            Progress.challengeIntroDone = true    // persist across sessions (MD-18)
+            showChallengeIntro = false
+            // TR-D2: start playing so the first prompt appears on its own.
+            if (currentT >= r.totalTime) currentT = 0; playing = true
+        }
     }
 }
 
@@ -672,8 +690,12 @@ private fun GanttBoard(r: SchedResult, currentT: Int, pop: Float, flash: Float, 
                 }
             }
 
-            // 3) playhead — gradient glow + line + head
-            val px = x(animT)
+            // 3) playhead — TM-1 (Opção A): the line marks the END of the processed
+            // tick (right edge of the running cell), so EVERYTHING LEFT of it has
+            // already executed — the currently-running cell sits to the LEFT, never
+            // on the "future" side. (Was x(animT) = left edge → the running cell read
+            // as "about to start".) The trailing glow falls over the running cell.
+            val px = x((animT + 1f).coerceAtMost(total.toFloat()))
             drawRect(
                 brush = Brush.horizontalGradient(0f to Color.Transparent, 1f to ACCENT.copy(alpha = 0.16f),
                     startX = px - 14f, endX = px),
@@ -701,10 +723,14 @@ private fun GanttBoard(r: SchedResult, currentT: Int, pop: Float, flash: Float, 
 @Composable
 private fun GanttLegend() {
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 3.dp),
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 4.dp, vertical = 3.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // TM-1: name the now-line convention — line = now (end of the processed
+        // tick); everything to its left has already executed.
+        Text("│ agora ← já executou", color = ACCENT, fontWeight = FontWeight.SemiBold,
+            style = MaterialTheme.typography.labelSmall)
         Text("▶ chegada", color = ARRIVAL_GREEN, style = MaterialTheme.typography.labelSmall)
         Text("■ término", color = FINISH_RED, style = MaterialTheme.typography.labelSmall)
         Text("■ executando", color = INK_TEXT_DIM, style = MaterialTheme.typography.labelSmall)
@@ -735,10 +761,22 @@ private fun DrawScope.drawCell(x: Float, top: Float, cw: Float, h: Float, col: C
 
 // ---- Task pills ("ready tasks light up") --------------------------------------
 
+// MD-25: the decision attribute each algorithm actually uses, shown per task so
+// the challenge is fair (you can't predict the pick — esp. a tie-break — without
+// seeing the criterion). Maziero metric: higher priority = more priority; SJF/SRTF
+// pick the shortest (duration); FCFS/RR go by arrival order.
+// Algo indices (native order): 0 FCFS · 1 SJF · 2 RR · 3 SRTF · 4 PRIOc · 5 PRIOp · 6 PRIOd.
+private fun decisionAttr(task: TaskRow, algoIdx: Int): String = when (algoIdx) {
+    1, 3 -> "${task.duration}t"      // SJF / SRTF — duração
+    4, 5, 6 -> "p${task.priority}"   // PRIOc / PRIOp / PRIOd — prioridade
+    else -> "@${task.arrival}"       // FCFS / RR — chegada
+}
+
 @Composable
 private fun TaskPills(
     r: SchedResult,
     currentT: Int,
+    algoIdx: Int = 0,
     challengePendingId: Int? = null,
     challengePickedId: Int? = null,
     onChallengePick: ((Int) -> Unit)? = null,
@@ -826,12 +864,21 @@ private fun TaskPills(
                     .padding(horizontal = 14.dp, vertical = 8.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(
-                    task.name + suffix,
-                    color = fg,
-                    fontWeight = if (phase == TaskPhase.RUNNING || isPickable) FontWeight.Bold else FontWeight.Medium,
-                    style = MaterialTheme.typography.labelLarge,
-                )
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        task.name + suffix,
+                        color = fg,
+                        fontWeight = if (phase == TaskPhase.RUNNING || isPickable) FontWeight.Bold else FontWeight.Medium,
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                    // MD-25: the algorithm's decision number for this task (chegada/duração/
+                    // prioridade) — so the pick is predictable, especially on a tie-break.
+                    Text(
+                        decisionAttr(task, algoIdx),
+                        color = fg.copy(alpha = 0.75f),
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                }
             }
         }
     }
@@ -993,12 +1040,17 @@ private fun Transport(
     accent: Color, canBack: Boolean, canFwd: Boolean, playing: Boolean,
     onBack: () -> Unit, onFwd: () -> Unit, onRun: () -> Unit, onReset: () -> Unit,
     stacked: Boolean = false,
+    pending: Boolean = false,   // TR-D1: a challenge is awaiting an answer
 ) {
     val playIcon = if (playing) Icons.Filled.Pause else Icons.Filled.FastForward
-    val playLabel = if (playing) "Pausar" else "Executar"
+    // TR-D1: while a challenge is pending, the transport is a no-op (guards in
+    // onBack/onFwd/onRun) — so it must LOOK inert (dim) and say where the action is,
+    // instead of appearing clickable but dead (honest affordance).
+    val playLabel = if (pending) "Responda acima ↑" else if (playing) "Pausar" else "Executar"
+    val dim = Modifier.alpha(if (pending) 0.4f else 1f)
     if (stacked) {
         // Narrow side-rail (landscape): primary on its own row so the label never wraps.
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(dim, verticalArrangement = Arrangement.spacedBy(10.dp)) {
             PrimaryButton(playIcon, playLabel, accent, onRun, Modifier.fillMaxWidth())
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 GhostButton(Icons.Filled.SkipPrevious, "Voltar passo", canBack, onBack, Modifier.weight(1f))
@@ -1007,7 +1059,7 @@ private fun Transport(
             }
         }
     } else {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp),
+        Row(dim.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically) {
             GhostButton(Icons.Filled.SkipPrevious, "Voltar passo", canBack, onBack, Modifier.weight(1f))
             PrimaryButton(playIcon, playLabel, accent, onRun, Modifier.weight(1.6f))
