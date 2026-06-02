@@ -36,10 +36,10 @@ UX/qualidade do projeto.
 | MD-22 | 🟢 | Transração prompt↔veredito↔próxima ainda é corte seco (sem AnimatedVisibility/Crossfade) | Movimento (HIG) | aberto |
 | **MD-23** | 🔴 | **"Modo Desafio" é um toggle FANTASMA**: ativá-lo não muda nada visível; só vira desafio ao Executar. Deve ser um MODO real (segmented control Assistir/Desafio), com identidade cromática vibrante própria e recompensa mais viciante | Mode error (Norman 1981); Tesler "NO MODES"; Nielsen #1 | aberto (v0.6.7) — spec em `UX_STUDY.md` §6 |
 | **MD-24** | 🟡 | **A 1ª decisão é ENTREGUE**: a célula do tick 0 (quem roda primeiro) aparece antes de o usuário responder; o desafio só pergunta nos context switches, nunca a 1ª escolha. Deve perguntar a 1ª decisão também, **sem desenhar a célula pendente** (a célula da resposta não pode aparecer antes da resposta) | Integridade do teste (recuperação ativa) | aberto |
-| **MD-25** | 🔴 | **Atributos de decisão INVISÍVEIS**: prioridade (PRIOc/p/d), duração (SJF/SRTF) e chegada (FCFS) não estão na tela → é impossível prever a escolha, **especialmente no desempate**. Mostrar números por tarefa conforme o algoritmo (métrica Maziero: prioridade maior = mais prioritária; desempate por id) | Nielsen #6 (reconhecimento, não memória); justiça do teste | aberto |
+| **MD-25** | 🔴 | **Atributos de decisão INVISÍVEIS**: prioridade (PRIOc/p/d), duração (SJF/SRTF) e chegada (FCFS) não estão na tela → é impossível prever a escolha, **especialmente no desempate**. Mostrar números por tarefa conforme o algoritmo (métrica Maziero: prioridade maior = mais prioritária; desempate por id) | Nielsen #6 (reconhecimento, não memória); justiça do teste | ✅ v0.6.6 — `decisionAttr()` na pill: `@chegada` (FCFS/RR), `Nt` duração (SJF/SRTF), `pN` prioridade (PRIOc/p/d). Validado no device: FCFS @0/@1/@3/@5, SJF 5t/2t/4t/1t/2t (escolhe o menor) |
 | MD-16 | 🟢 | Cor ACCENT na microcópia de gesto compete com a pergunta | Hierarquia tipográfica | aberto |
 | MD-17 | 🟢 | Sheet sem animação de entrada nem "pular" | Movimento; controle | aberto |
-| MD-18 | 🟢 | "Não mostrar de novo" não persiste entre sessões (em memória) | Respeito ao recorrente | aberto |
+| MD-18 | 🟢 | "Não mostrar de novo" não persiste entre sessões (em memória) | Respeito ao recorrente | ✅ v0.6.6 — `object Progress` (SharedPreferences `challengeIntroDone`); a intro não reaparece a cada sessão |
 | MD-19 | 🟢 | a11y do sheet/pills: foco, ordem, contentDescription dos ✓/✗ | TalkBack / foco | aberto |
 
 ### Backlog técnico (origem: Códex §5 — qualidade ABNT NBR ISO/IEC 25010)
@@ -51,7 +51,7 @@ UX/qualidade do projeto.
 | BT-3 | 🟡 | UI Compose sem testes instrumentados (só smoke) — falta androidTest/Robolectric | aberto |
 | BT-4 | 🟢 | `dp.toPx()` inconsistente no Canvas (px cru misturado com sp) | aberto |
 | BT-5 | 🟢 | Falta `CHANGELOG.md` (notas de release são automáticas) | aberto |
-| BT-6 | 🟡 | Upload paste.rs sem confirmação explícita nem anonimização | aberto |
+| BT-6 | 🟡 | Upload paste.rs sem confirmação explícita nem anonimização | ✅ v0.6.6 (= STD-9) — diálogo "Enviar publicamente?" antes do POST |
 | BT-7 | 🟢 | clang-tidy/lizard informativos na CI — considerar torná-los bloqueantes | aberto |
 
 ---
@@ -70,10 +70,13 @@ UX/qualidade do projeto.
 ---
 
 ## Estados de produto (STD-*) — varredura heurística (ver `docs/RELEASE_PLAN.md`)
-Lacunas que o plano de transições/motion não cobria. **STD-1 🔴 Gemini/IA** (feature
-em produção viola Nielsen #9: erro colapsado no sucesso, sem cancelar/offline) ·
-**STD-2 🔴 empty states** · **STD-3 🔴 erro/retry** · **STD-6 🔴 i18n+moeda+headline
-hardcoded (bug)** · **STD-9 🔴 upload sem confirmação (privacidade)** · STD-4/5/7/8/10/11/12 🟡
+Lacunas que o plano de transições/motion não cobria. **STD-1 ✅ v0.6.6 Gemini/IA**
+(`AiResult` selado → 4 estados distintos: Loading c/ spinner+Cancelar+timeout 20s,
+Erro âmbar-vermelho "Tentar de novo", onboarding dourado "Configurar a IA", Sucesso
+roxo; precheck `isOnline()` + permissão `ACCESS_NETWORK_STATE`) ·
+**STD-2 🔴 empty states** · **STD-3 🔴 erro/retry** · **STD-6 ✅ v0.6.6 i18n+moeda+headline**
+(`money()` → `NumberFormat`; `PayoffBanner` lê o `Settlement` real, não strings fixas) ·
+**STD-9 ✅ v0.6.6 upload-confirm (privacidade)** · STD-4/5/7/8/10/11/12 🟡
 (loading, offline, a11y, responsividade, settings/persistência, design system, onboarding
 global) · STD-13/14 🟢. **Correção de rumo:** `object Progress` (persistência) sobe p/ a 1ª
 release — sem ela a retenção é falsa. TR-D6 reclassificado: esconde bug de placar acumulado.
@@ -83,7 +86,7 @@ Eixo NOVO, levantado pelo dono — escapou de 3 reviews (motion ≠ semântica).
 
 | # | Sev | Apontamento | Princípio | Status |
 |---|-----|-------------|-----------|--------|
-| TM-1 | 🔴 | Scheduler: playhead na borda ESQUERDA da célula atual → a célula "executando" fica à direita da linha (parece futuro); contradiz "Executando t1" | now-line convention (esq=passado); instante×intervalo (Aigner); fencepost (Dijkstra) | aberto (v0.6.6) |
+| TM-1 | 🔴 | Scheduler: playhead na borda ESQUERDA da célula atual → a célula "executando" fica à direita da linha (parece futuro); contradiz "Executando t1" | now-line convention (esq=passado); instante×intervalo (Aigner); fencepost (Dijkstra) | ✅ v0.6.6 — **Opção A (escolha do dono)**: playhead em `x(currentT+1)` (borda direita do tick processado); tudo à esquerda já executou; legenda "│ agora ← já executou". Validado no device |
 | TM-2 | 🟡 | Min Cash Flow: scrubber/cursor sobre steps discretos — auditar fronteira passado/futuro do thumb | idem | a auditar |
 | TM-3 | 🟡 | Sort: fronteira ordenado↔não-ordenado (a barra-limite pertence a quem?) + hi_a/hi_b "lendo" sem sugerir "escrevendo" | idem | a auditar |
 | TM-4 | 🟢 | Rótulos de tempo do eixo (borda vs centro da célula) — consistência com o playhead | idem | a auditar |
@@ -101,6 +104,32 @@ do Códex sem "você está aqui").
 
 ## Histórico de validações
 
+- **2026-06-01 — v0.6.6 implementada + validada no device (N975F, debug v0.6.6)**
+  Escopo aprovado pelo dono ("v0.6.6 completa"): Fundação (`Motion`/`Progress`) +
+  TM-1 + TR-D1/D2/D6 + MD-25 + MD-18 + STD-1/6/9.
+  **Scheduler** (Gate 0/1/3.5 ✅, zero crash): TM-1 playhead Opção A; MD-25 números
+  por algoritmo (FCFS @0/@1/@3/@5, SJF 5t/2t/4t/1t/2t → escolhe menor); TR-D2 (o modo
+  já roda ao ativar/"Começar"); TR-D1 (transporte esmaecido + "Responda acima ↑" no
+  pendente; bug do ◀ guardado por `challengePendingId`); TR-D6 (placar zera no Reiniciar).
+  **Profiler/STD-9** ✅: diálogo "Enviar publicamente? … paste.rs … qualquer pessoa
+  poderá ver" (Cancelar/Enviar) antes do POST.
+  **Min Cash Flow/STD-6** ✅: `PayoffBanner` data-driven — "Mário deve R$ 67,00 para
+  Cássia · 190 diretas → 1 pagamento" sai do `Settlement` real (M→C, R$67,00); `money()`
+  via `NumberFormat` renderiza "R$ 67,00"; strip do chip de nó endurecido (`^[^0-9]+`,
+  imune ao NBSP do ICU).
+  **Sort/STD-1** ✅ (parcial-empírico): Loading (Consultando IA… + Cancelar) e Erro
+  (ícone alerta âmbar-vermelho, "Não consegui explicar", detalhe discreto, "Tentar de
+  novo") **vistos no device**. Sucesso e onboarding dourado verificados por código (a
+  chave de API do build está expirada → toda chamada cai em Erro). **Achado de campo:**
+  o estado *offline* não foi reproduzível no N975F — com Wi-Fi/dados off (`wifi_on=0`,
+  `ping` unreachable) o `ConnectivityManager` do app ainda reporta uma rede *validada*
+  com `NET_CAPABILITY_INTERNET` (rede-fantasma IMS/VoLTE), então `isOnline()` (corret-
+  amente, por design) retorna true. Decisão: manter o check `INTERNET`-only (não exigir
+  `_VALIDATED` — regrediria Wi-Fi corporativo válido) + **adicionar a permissão
+  `ACCESS_NETWORK_STATE`** (estritamente melhor: num device normal, Wi-Fi off → `active
+  Network==null` → "Sem conexão" passa a disparar; antes a permissão faltava e o check
+  era no-op). Limitação documentada honestamente; código correto para o caso comum.
+  Host unit tests ✅ (`assertEquals(190)` intacto — STD-6 mexeu só na exibição).
 - **2026-06-01 — sessão de teste de toque (N975F, build debug v0.6.3+)**
   Gate 0 ✅ build/install · Gate 1 ✅ taps (bonequinho 20×, transporte 40×,
   auto-close 39-min, Sort, Desafio) — zero crash/ANR no logcat · Gate 3 ⚠️

@@ -4,7 +4,10 @@
 // gestures). The C++ side keeps the coroutine sort engine + AAudio synth.
 package com.mariocjun.algoviz
 
+import android.content.Context
 import android.content.res.Configuration
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -25,16 +28,21 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.CloudOff
+import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Pause
@@ -47,6 +55,7 @@ import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
@@ -78,6 +87,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
@@ -87,14 +97,61 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.mariocjun.algoviz.ai.AiResult
+import com.mariocjun.algoviz.ai.ErrorKind
 import com.mariocjun.algoviz.ai.GeminiAssistant
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.Locale
 import kotlin.math.ceil
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
+
+// ---- AI explain dialog state ------------------------------------------------
+//
+// The "Explicação IA" feature owns three VISUALLY DISTINCT dialog states so it
+// stops violating Nielsen #9 (an error must never wear the success dialog's ✨
+// purple chrome). `AiState` is the single source of truth the screen renders:
+//   Loading  → spinner + Cancelar (cancels the coroutine) + a 20 s timeout
+//   Error    → own red/amber identity, "Tentar de novo", offline/key/generic copy
+//   Success  → the existing ✨ "Explicação do Gemini" card
+// Null = no dialog. `MissingApiKey` is surfaced as a *friendly* error variant
+// (instruction tone), not a raw fault.
+private sealed interface AiState {
+    data object Loading : AiState
+    data class Success(val text: String) : AiState
+    data class Failure(val kind: AiFailure, val detail: String? = null) : AiState
+}
+
+// What went wrong, in user terms. Drives icon + colour + title + body copy.
+private enum class AiFailure { OFFLINE, NO_API_KEY, GENERIC }
+
+// Alert/error accent — warm amber-red, deliberately NOT the ✨ success purple
+// (0xFF8E75FF) so the eye reads "problem" at a glance.
+private val AI_ERROR_ACCENT = Color(0xFFFF6B5C)
+// Onboarding accent for the missing-key case: calmer gold (it's a setup nudge,
+// not a failure) — still distinct from success purple.
+private val AI_ONBOARD_ACCENT = Color(0xFFE8B62E)
+
+// Proactive offline check (Nielsen #1 — tell the user the system state before
+// they wait on a doomed request). Requires ACCESS_NETWORK_STATE (declared in the
+// Manifest); if it's ever missing the call can throw, so we treat *any* failure
+// as "assume online" and let the real network attempt surface the error rather
+// than falsely block the user. The common offline case — Wi-Fi off, no mobile
+// data — yields a null activeNetwork → false → the honest "Sem conexão" state.
+// (We deliberately check only NET_CAPABILITY_INTERNET, not _VALIDATED: a working
+// network whose validation lags or is blocked, e.g. some corporate Wi-Fi, must
+// not read as offline. The fallback for an unvalidated dead link that still
+// claims internet is the request itself failing — caught reactively below.)
+private fun isOnline(context: Context): Boolean = runCatching {
+    val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+        ?: return@runCatching true
+    val caps = cm.activeNetwork?.let(cm::getNetworkCapabilities) ?: return@runCatching false
+    caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+}.getOrDefault(true)
 
 private fun barColor(
     v01: Float, bright: Boolean, noteCount: Int,
@@ -204,11 +261,14 @@ private fun VizScreen() {
     var moodColor by remember { mutableStateOf(true) }    // mode-mood brightness/saturation
     var lastStepKind by remember { mutableIntStateOf(0) } // 0=Compare 1=Swap 2=Set 3=Pivot
 
-    // AI Assistant state
+    // AI Assistant state. `aiState` is the single source of truth for the dialog
+    // (loading / success / error). `aiJob` holds the in-flight coroutine so the
+    // Cancelar button (and dismiss) can abort it. See AiState above.
     val gemini = remember { GeminiAssistant() }
     val scope = rememberCoroutineScope()
-    var aiExplanation by remember { mutableStateOf<String?>(null) }
-    var aiLoading by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    var aiState by remember { mutableStateOf<AiState?>(null) }
+    var aiJob by remember { mutableStateOf<Job?>(null) }
 
     // Push initial UI state into the engine so the two never disagree (the C++
     // engine has its own defaults; the UI is the source of truth on launch).
@@ -308,6 +368,48 @@ private fun VizScreen() {
         }
     }
 
+    // Fires an explanation request. Shared by the "Explicação IA" button and the
+    // error dialog's "Tentar de novo" so retry is identical to a first attempt.
+    // Steps: proactive offline gate → spinner state → cancellable coroutine with
+    // a 20 s timeout → map the typed AiResult onto the right dialog state.
+    val launchExplain: () -> Unit = explain@{
+        if (!gemini.hasValidApiKey()) {
+            aiState = AiState.Failure(AiFailure.NO_API_KEY)
+            return@explain
+        }
+        if (!isOnline(context)) {
+            aiState = AiState.Failure(AiFailure.OFFLINE)
+            return@explain
+        }
+        aiJob?.cancel()
+        aiState = AiState.Loading
+        aiJob = scope.launch {
+            val name = algoNames.getOrElse(algoIdx) { "Unknown" }
+            val result = withTimeoutOrNull(20_000) { gemini.explainAlgorithm(name) }
+            aiState = when (result) {
+                null -> AiState.Failure(AiFailure.GENERIC, "Tempo esgotado (20s).")
+                is AiResult.Success -> AiState.Success(result.text)
+                is AiResult.MissingApiKey -> AiState.Failure(AiFailure.NO_API_KEY)
+                is AiResult.Error -> AiState.Failure(
+                    when (result.kind) {
+                        ErrorKind.OFFLINE -> AiFailure.OFFLINE
+                        ErrorKind.GENERIC -> AiFailure.GENERIC
+                    },
+                    result.detail,
+                )
+            }
+            aiJob = null
+        }
+    }
+
+    // Cancels any in-flight request and closes the dialog. Used by Cancelar and
+    // by tapping outside the loading dialog.
+    val cancelExplain: () -> Unit = {
+        aiJob?.cancel()
+        aiJob = null
+        aiState = null
+    }
+
     val panel: @Composable (Modifier) -> Unit = { mod ->
         ControlPanel(
             modifier = mod,
@@ -336,52 +438,23 @@ private fun VizScreen() {
             onLoopRandom = { b -> loopRandom = b; VizBridge.nativeSetLoopRandom(b) },
             onFinishFx = { b -> finishFx = b },
             onCollapse = { controlsOpen = false },
-            onExplain = {
-                if (gemini.hasValidApiKey()) {
-                    aiLoading = true
-                    scope.launch {
-                        aiExplanation = gemini.explainAlgorithm(algoNames.getOrElse(algoIdx) { "Unknown" })
-                        aiLoading = false
-                    }
-                } else {
-                    aiExplanation = "API Key não configurada. Crie o arquivo secrets.properties com GOOGLE_AI_API_KEY."
-                }
-            }
+            onExplain = launchExplain,
         )
     }
 
-    if (aiExplanation != null) {
-        AlertDialog(
-            onDismissRequest = { aiExplanation = null },
-            confirmButton = {
-                TextButton(onClick = { aiExplanation = null }) { Text("OK") }
-            },
-            title = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.AutoAwesome, contentDescription = null, tint = Color(0xFF8E75FF))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Explicação do Gemini", fontWeight = FontWeight.Bold)
-                }
-            },
-            text = {
-                Text(aiExplanation!!, style = MaterialTheme.typography.bodyMedium)
-            },
-            containerColor = Color(0xFF1C1C1E), // Apple-grade dark
-            titleContentColor = Color.White,
-            textContentColor = Color(0xFFE5E5E7)
+    // Three visually distinct dialog states (STD-1 / Nielsen #9). Each renders
+    // its own chrome — loading never looks like success, error never looks like
+    // success — so the user always knows which of the three situations they're in.
+    when (val s = aiState) {
+        is AiState.Loading -> AiLoadingDialog(onCancel = cancelExplain)
+        is AiState.Success -> AiSuccessDialog(text = s.text, onClose = { aiState = null })
+        is AiState.Failure -> AiErrorDialog(
+            failure = s.kind,
+            detail = s.detail,
+            onClose = { aiState = null },
+            onRetry = launchExplain,
         )
-    }
-
-    if (aiLoading) {
-        AlertDialog(
-            onDismissRequest = { },
-            confirmButton = { },
-            title = { Text("Consultando IA...") },
-            text = { Text("O Gemini está analisando o algoritmo para você.") },
-            containerColor = Color(0xFF1C1C1E),
-            titleContentColor = Color.White,
-            textContentColor = Color(0xFFE5E5E7)
-        )
+        null -> Unit
     }
 
     if (landscape) {
@@ -401,6 +474,135 @@ private fun VizScreen() {
             if (controlsOpen) panel(Modifier.fillMaxWidth().heightIn(max = 300.dp))
         }
     }
+}
+
+// ---- AI explain dialogs ------------------------------------------------------
+//
+// Three separate composables so each state has an unmistakable identity. Shared
+// Apple-grade dark container (0xFF1C1C1E); only the accent + iconography differ.
+
+private val AI_DIALOG_BG = Color(0xFF1C1C1E)
+private val AI_DIALOG_BODY = Color(0xFFE5E5E7)
+
+// LOADING — spinner makes the wait legible (no frozen UI), Cancelar aborts the
+// coroutine, and dismissing outside cancels too. Distinct from success: a live
+// progress ring, neutral copy, no ✨.
+@Composable
+private fun AiLoadingDialog(onCancel: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onCancel,   // tap-outside cancels the in-flight request
+        confirmButton = {
+            TextButton(
+                onClick = onCancel,
+                modifier = Modifier.semantics { contentDescription = "Cancelar" },
+            ) { Text("Cancelar") }
+        },
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    strokeWidth = 2.dp,
+                    color = Color(0xFF8E75FF),
+                )
+                Spacer(Modifier.width(12.dp))
+                Text("Consultando IA…", fontWeight = FontWeight.Bold)
+            }
+        },
+        text = { Text("O Gemini está analisando o algoritmo. Isso leva alguns segundos.") },
+        containerColor = AI_DIALOG_BG,
+        titleContentColor = Color.White,
+        textContentColor = AI_DIALOG_BODY,
+    )
+}
+
+// SUCCESS — the original ✨ purple "Explicação do Gemini" card, unchanged.
+@Composable
+private fun AiSuccessDialog(text: String, onClose: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onClose,
+        confirmButton = { TextButton(onClick = onClose) { Text("OK") } },
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.AutoAwesome, contentDescription = null, tint = Color(0xFF8E75FF))
+                Spacer(Modifier.width(8.dp))
+                Text("Explicação do Gemini", fontWeight = FontWeight.Bold)
+            }
+        },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                Text(text, style = MaterialTheme.typography.bodyMedium)
+            }
+        },
+        containerColor = AI_DIALOG_BG,
+        titleContentColor = Color.White,
+        textContentColor = AI_DIALOG_BODY,
+    )
+}
+
+// ERROR — its OWN identity: alert icon + warm accent (never the success purple),
+// a human title + situation-specific copy, and a "Tentar de novo" action beside
+// OK. The missing-key case is reframed as friendly onboarding (gold, key icon,
+// instruction tone), not a raw fault.
+@Composable
+private fun AiErrorDialog(
+    failure: AiFailure,
+    detail: String?,
+    onClose: () -> Unit,
+    onRetry: () -> Unit,
+) {
+    val onboarding = failure == AiFailure.NO_API_KEY
+    val accent = if (onboarding) AI_ONBOARD_ACCENT else AI_ERROR_ACCENT
+    val icon = when (failure) {
+        AiFailure.OFFLINE -> Icons.Filled.CloudOff
+        AiFailure.NO_API_KEY -> Icons.Filled.Key
+        AiFailure.GENERIC -> Icons.Filled.ErrorOutline
+    }
+    val title = if (onboarding) "Configurar a IA" else "Não consegui explicar"
+    val body = when (failure) {
+        AiFailure.OFFLINE ->
+            "Sem conexão — a IA precisa de internet. Verifique o Wi-Fi ou os dados móveis e tente de novo."
+        AiFailure.NO_API_KEY ->
+            "Para usar a IA, configure GOOGLE_AI_API_KEY no arquivo secrets.properties do projeto e recompile."
+        AiFailure.GENERIC ->
+            "Algo deu errado ao falar com o Gemini. Tente novamente em instantes."
+    }
+
+    AlertDialog(
+        onDismissRequest = onClose,
+        // "Tentar de novo" is the primary recovery; for the key case it doubles
+        // as a re-check after the user wires the secret in.
+        confirmButton = {
+            TextButton(
+                onClick = onRetry,
+                modifier = Modifier.semantics { contentDescription = "Tentar de novo" },
+            ) { Text("Tentar de novo", color = accent, fontWeight = FontWeight.SemiBold) }
+        },
+        dismissButton = {
+            TextButton(onClick = onClose) { Text("OK") }
+        },
+        icon = { Icon(icon, contentDescription = null, tint = accent) },
+        title = { Text(title, fontWeight = FontWeight.Bold) },
+        text = {
+            Column {
+                Text(body, style = MaterialTheme.typography.bodyMedium)
+                // Surface the raw cause quietly for debugging, never as the headline.
+                if (!detail.isNullOrBlank() && !onboarding) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        detail,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = AI_DIALOG_BODY.copy(alpha = 0.55f),
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        },
+        containerColor = AI_DIALOG_BG,
+        iconContentColor = accent,
+        titleContentColor = Color.White,
+        textContentColor = AI_DIALOG_BODY,
+    )
 }
 
 @Composable

@@ -121,7 +121,7 @@ internal val PERSON_HUES = listOf(
 )
 
 internal fun money(cents: Long): String =
-    "R$ " + String.format(Locale("pt", "BR"), "%.2f", cents / 100.0)
+    java.text.NumberFormat.getCurrencyInstance(Locale("pt", "BR")).format(cents / 100.0)
 
 internal fun initials(name: String): String =
     name.trim().split(" ").filter { it.isNotEmpty() }.take(2)

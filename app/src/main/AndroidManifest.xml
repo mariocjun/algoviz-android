@@ -5,6 +5,13 @@
          paste.rs and similar public paste services for remote analysis. -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- ACCESS_NETWORK_STATE: lets the Gemini "Explicação IA" precheck detect
+         offline BEFORE calling the model (the SDK wraps airplane-mode faults in
+         its own exception type with a blank message, so reactive classification
+         can't reliably tell offline from a generic API error). With this, the
+         isOnline() check short-circuits to the "Sem conexão" state. See STD-1. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
     <application
         android:name=".AlgovizApp"
         android:allowBackup="true"

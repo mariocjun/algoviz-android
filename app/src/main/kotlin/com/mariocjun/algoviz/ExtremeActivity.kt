@@ -158,6 +158,9 @@ private fun ExtremeScreen(onExit: () -> Unit) {
     val total = r.steps.size
     val buildEnd = r.buildEnd
     val pruneEnd = r.pruneEnd
+    // The real final payment the headline reports (extreme demo → exactly 1:
+    // "Mário deve R$ 67,00 para Cássia"). null when everyone's already even.
+    val payoff = remember(r) { r.settlements.lastOrNull() }
     // Lay nodes by their net balance just before settling, so the two non-zero
     // people (Cássia +, Mário −) land adjacent at the top and their final arc reads.
     val netBal = remember { r.balancesAt(pruneEnd) }
@@ -316,7 +319,7 @@ private fun ExtremeScreen(onExit: () -> Unit) {
             Box(Modifier.weight(1f).fillMaxHeight()) {
                 graph(Modifier.fillMaxSize())
                 status(Modifier.align(Alignment.TopStart).padding(12.dp))
-                if (done) PayoffBanner(r.direct.size, r.settlements.size, hue, pulse, Modifier.align(Alignment.Center))
+                if (done) PayoffBanner(payoff, r.direct.size, r.settlements.size, hue, pulse, Modifier.align(Alignment.Center))
             }
             Column(
                 Modifier.width(214.dp).fillMaxHeight().padding(10.dp),
@@ -348,7 +351,7 @@ private fun ExtremeScreen(onExit: () -> Unit) {
                     if (sound) "Som ligado" else "Som desligado", { sound = !sound }, Modifier)
                 GlassIcon(Icons.Filled.Close, "Voltar", onExit, Modifier)
             }
-            if (done) PayoffBanner(r.direct.size, r.settlements.size, hue, pulse, Modifier.align(Alignment.Center))
+            if (done) PayoffBanner(payoff, r.direct.size, r.settlements.size, hue, pulse, Modifier.align(Alignment.Center))
             Column(
                 Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(12.dp)
                     .onGloballyPositioned { botGuardPx = it.boundsInParent().top },
@@ -468,7 +471,12 @@ private fun DrawScope.drawReductionFrame(
             topLeft = Offset(pp.x - im.size.width / 2f, pp.y - im.size.height / 2f))
         if (live && liveCount <= 6) {
             val bc = if (b > 0) EX_OWED else EX_OWES
-            val txt = (if (b > 0) "+" else "−") + money(kotlin.math.abs(b)).removePrefix("R$ ")
+            // money() uses NumberFormat, whose symbol/separator vary by ICU
+            // version (the R$ is followed by a NBSP U+00A0 on newer ones, a plain
+            // space on older). Strip everything up to the first digit so the chip
+            // reads "+67,00" regardless of which separator the device emits.
+            val txt = (if (b > 0) "+" else "−") +
+                money(kotlin.math.abs(b)).replace(Regex("^[^0-9]+"), "")
             val bs = TextStyle(color = bc, fontSize = (nodeR * 0.5f).coerceIn(8f, 12f).sp, fontWeight = FontWeight.Bold)
             val bm = measurer.measure(txt, bs)
             drawText(textLayoutResult = bm, topLeft = Offset(pp.x - bm.size.width / 2f, pp.y + nodeR + 2f))
@@ -625,22 +633,34 @@ private fun ExtremeStatus(
     }
 }
 
+// The headline reads the REAL final payment off the reduction (the last
+// Settlement) instead of hard-coded strings, so it can never lie if the demo
+// changes. `payoff` is the single payment that zeroes everyone (1 for the
+// extreme demo); null → nothing left to settle ("Tudo quitado").
 @Composable
-private fun PayoffBanner(directCount: Int, payCount: Int, hue: Float, pulse: Float, modifier: Modifier) {
+private fun PayoffBanner(
+    payoff: Settlement?, directCount: Int, payCount: Int, hue: Float, pulse: Float, modifier: Modifier,
+) {
     GlassCard(modifier.widthIn(max = 360.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            for ((i, c) in "Mário".withIndex())
-                Text(c.toString(), color = Color.hsv((hue + i * 24f) % 360f, 0.75f, 1f),
-                    fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
-            Spacer(Modifier.width(8.dp))
-            Text("deve", color = EX_DIM, style = MaterialTheme.typography.titleMedium)
+        if (payoff == null) {
+            Text("Tudo quitado", color = EX_OWED, fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.titleLarge)
+            Text("ninguém deve nada", color = EX_DIM, style = MaterialTheme.typography.bodyMedium)
+        } else {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                for ((i, c) in payoff.from.withIndex())
+                    Text(c.toString(), color = Color.hsv((hue + i * 24f) % 360f, 0.75f, 1f),
+                        fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
+                Spacer(Modifier.width(8.dp))
+                Text("deve", color = EX_DIM, style = MaterialTheme.typography.titleMedium)
+            }
+            Spacer(Modifier.height(2.dp))
+            Text(money(payoff.amountCents), color = EX_OWED.copy(alpha = pulse), fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.headlineMedium)
+            Text("para ${payoff.to}", color = EX_TXT, style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(4.dp))
+            Text("$directCount diretas → $payCount pagamento", color = EX_DIM, style = MaterialTheme.typography.labelMedium)
         }
-        Spacer(Modifier.height(2.dp))
-        Text("R$ 67,00", color = EX_OWED.copy(alpha = pulse), fontWeight = FontWeight.Bold,
-            style = MaterialTheme.typography.headlineMedium)
-        Text("para Cássia", color = EX_TXT, style = MaterialTheme.typography.titleMedium)
-        Spacer(Modifier.height(4.dp))
-        Text("$directCount diretas → $payCount pagamento", color = EX_DIM, style = MaterialTheme.typography.labelMedium)
     }
 }
 

@@ -37,6 +37,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
@@ -47,6 +48,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -61,8 +63,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.lifecycleScope
@@ -267,7 +272,7 @@ class MainActivity : ComponentActivity() {
             doOutput = true; doInput = true
             connectTimeout = 15_000; readTimeout = 15_000
             setRequestProperty("Content-Type", "text/plain; charset=utf-8")
-            setRequestProperty("User-Agent", "algoviz/0.6.2")
+            setRequestProperty("User-Agent", "algoviz/${BuildConfig.VERSION_NAME}")
         }
         try {
             conn.outputStream.use { os: OutputStream -> os.write(body.toByteArray(Charsets.UTF_8)) }
@@ -363,6 +368,7 @@ private fun ProfilerScreen(
 ) {
     var filter by remember { mutableStateOf("") }
     var selectedBench by remember { mutableIntStateOf(0) }   // 0 = "Padrão" (empty filter)
+    var showUploadConfirm by remember { mutableStateOf(false) }  // privacy gate before paste.rs upload
 
     Column(
         Modifier.fillMaxSize().padding(horizontal = 16.dp),
@@ -453,9 +459,10 @@ private fun ProfilerScreen(
             modifier = Modifier.fillMaxWidth().semantics { contentDescription = "btn_viz" },
         ) { Text("Visualizar sorts ▶") }
 
-        // Upload
+        // Upload — gated by a privacy confirmation dialog (Nielsen #3: user control).
+        // paste.rs is a PUBLIC, anonymous paste; never send without explicit consent.
         OutlinedButton(
-            onClick = onUpload,
+            onClick = { showUploadConfirm = true },
             enabled = uploadEnabled,
             modifier = Modifier.fillMaxWidth().semantics { contentDescription = "btn_upload" },
         ) { Text("Enviar resultado (paste.rs)") }
@@ -483,6 +490,46 @@ private fun ProfilerScreen(
 
         Spacer(Modifier.height(6.dp))
     }
+
+    // Privacy confirmation gate for the public paste.rs upload (Nielsen #3).
+    if (showUploadConfirm) {
+        UploadConfirmDialog(
+            onConfirm = { showUploadConfirm = false; onUpload() },
+            onDismiss = { showUploadConfirm = false },
+        )
+    }
+}
+
+@Composable
+private fun UploadConfirmDialog(
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val body = buildAnnotatedString {
+        append("O resultado será publicado em ")
+        withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = TXT)) { append("paste.rs") }
+        append(", um paste público e anônimo — qualquer pessoa com o link poderá ver. Confirmar?")
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = PANEL,
+        titleContentColor = TXT,
+        textContentColor = TXT_DIM,
+        title = { Text("Enviar publicamente?", fontWeight = FontWeight.SemiBold) },
+        text = { Text(body, fontSize = 14.sp, lineHeight = 20.sp) },
+        confirmButton = {
+            TextButton(
+                onClick = onConfirm,
+                modifier = Modifier.semantics { contentDescription = "btn_upload_confirm" },
+            ) { Text("Enviar", color = ACCENT, fontWeight = FontWeight.SemiBold) }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+                modifier = Modifier.semantics { contentDescription = "btn_upload_cancel" },
+            ) { Text("Cancelar", color = TXT_DIM) }
+        },
+    )
 }
 
 @Composable
