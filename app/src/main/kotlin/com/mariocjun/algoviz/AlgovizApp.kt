@@ -14,6 +14,7 @@ import android.os.SystemClock
 class AlgovizApp : Application() {
     override fun onCreate() {
         super.onCreate()
+        Progress.init(this)   // local-only persistence (no PII); foundation for onboarding flags + mastery
         registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
             override fun onActivityResumed(activity: Activity) = AutoClose.onForeground(activity)
             override fun onActivityPaused(activity: Activity) = AutoClose.onBackground()
