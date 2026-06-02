@@ -106,6 +106,12 @@ Para cada ação interativa, validar com **rajada de frames** (tap → +200ms �
 - **TR-M2** 🟡 PayoffBanner sem scale-in (clímax merecia entrada com mola).
 - **TR-M3** 🟡 Fechar tutorial → animação começa em corte seco (sheet some instantânea).
 - **TR-M4** 🟡 Scrubber: pular para frente **não dispara floaters/raios** (só o avanço incremental os gera) — quem usa o scrubber perde o "tempero"; ◀ também é mudo (sem "des-cancela").
+- **TR-M5** 🟡→🔴 (estética/coreografia — **o clímax visual do app**) **A revelação das 190 dívidas é preguiçosa e previsível.** Hoje: cada aresta aparece **inteira de uma vez** (`drawEdge` traça o bézier completo, ExtremeActivity L424), na **ordem sequencial** de `r.direct` (pares i<j, DebtReduction L92), e a poda remove na mesma ordem (L418) → "dívidas indo do nó pro vizinho ao lado", sem vida. **Spec do redesign:**
+  1. **Draw-on das arestas (Trim Path):** cada dívida **cresce da origem ao destino** — a ponta parte de `pos[from]` e *chega* em `pos[to]` em ~350–450ms (emphasized-decelerate). Técnica: `PathMeasure.getSegment(0, len·progress)`; cada aresta tem `birthFrame → progress`; o loop `withFrameNanos` já existe.
+  2. **Ordem aleatória:** embaralhar a sequência de Build (seed fixo p/ reprodutibilidade) — as arestas **pipocam** pelo grafo conectando **extremos opostos** (cruzando o centro), não vizinhos em sequência. É o "parecer natural" que o dono pediu.
+  3. **Poda dinâmica:** ao pagar/absorver, a aresta **encolhe de volta à origem + fade** (não some instantânea) — "conforme paga, some do grafo".
+  4. **Escala pela estética (autorizado pelo dono — "a estética vale"):** se 190 arestas crescendo ficar poluído, **reduzir o grafo completo para ~14–15 pessoas (C=91–105 ≈ "100 passos")** via `extremeDemo(n)`. Trade-off: o headline "190→1" vira "~105→1" (atualizar Códex/CLAUDE.md). Recomendação: testar 15 pessoas; priorizar a legibilidade do crescimento.
+  - **Onde:** `ExtremeActivity.kt` drawReductionFrame (L410-437) + `drawEdge` (L500); `DebtReduction.kt` buildReduction (ordem) + extremeDemo (n). **Esforço:** M–G. **Impacto:** **Alto** (é o "uau" do app; o "addictive" depende disto).
 - ✅ **Referência do app**: scrubber tricolor = feedforward estrutural; **auto-pause no "grafo cheio" com caption "▶ para simplificar"** = Norman impecável; floaters/raios/flash dão vida a cada passo.
 
 ### 3.5 Profiler
@@ -138,6 +144,7 @@ Para cada ação interativa, validar com **rajada de frames** (tap → +200ms �
 | TR-D3 | 🟡 | Sched | desafio sem motion | `AnimatedVisibility` no prompt + `animateColorAsState` nas pills |
 | TR-R2/R3 | 🟡 | Racha | abas + salto p/ Extremo | shared axis nas abas + container transform Racha→Extremo |
 | TR-S3/S4/S5 | 🟡 | Sort | loop/Single-Race/painel | fade through / shared-axis nos cortes secos |
+| **TR-M5** | 🟡→🔴 | Min Cash Flow | revelação preguiçosa das 190 dívidas | **draw-on (Trim Path)** crescendo da origem + ordem aleatória + poda dinâmica; reduzir p/ ~105 se preciso |
 | TR-M2/M3/M4 | 🟡 | Min Cash Flow | banner/tutorial/scrubber | scale-in no banner; floaters no scrub |
 | TR-H1 | 🟡 | Global | Home→mini-app | container transform (ou aceitar como débito de arquitetura: Activities) |
 | TR-P3/P4/P5, TR-C2 | 🟡 | Profiler/Códex | histórico/chip/crash/scroll | animateItemPlacement; alerta no crash; indicador de progresso |
@@ -224,6 +231,7 @@ estética — é **pedagogia de interface**.
 - [Material Design 3 — Transitions](https://m3.material.io/styles/motion/transitions) · [The motion system (M2)](https://m2.material.io/design/motion/the-motion-system.html) · [Navigation transitions](https://m2.material.io/design/navigation/navigation-transitions.html)
 - [Building Beautiful Transitions with Material Motion for Android (codelab)](https://developer.android.com/codelabs/material-motion-android)
 - [Dan Saffer — Microinteractions (trigger / rules / feedback / loops & modes)](https://thedecisionlab.com/reference-guide/design/microinteractions) · Norman, *The Design of Everyday Things*; Djajadiningrat et al. — feedforward.
+- **Animação de grafo (TR-M5):** [Data-driven animations design space — "Ant" (TVCG 2021, PDF)](https://deardeer.github.io/pub/TVCG21_Ant.pdf) (gradual appearance, geometry deformation) · [Animating edges — React Flow](https://reactflow.dev/examples/edges/animating-edges) · Trim Paths / draw-on (After Effects / Lottie / Compose `PathMeasure.getSegment`).
 
 **IHC educacional & engajamento (§5):**
 - [Nir Eyal — Hook Model / Optimize App Retention](https://medium.com/googleplaydev/optimize-app-retention-with-the-hooked-model-a0781f8e5d29) · [Hook Model + Octalysis (Yu-kai Chou)](https://yukaichou.com/gamification-analysis/hook-model-octalysis-habit-addiction/)

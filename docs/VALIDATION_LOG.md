@@ -95,6 +95,13 @@ do Códex sem "você está aqui").
   auto-close 39-min, Sort, Desafio) — zero crash/ANR no logcat · Gate 3 ⚠️
   crítica HCI do Modo Desafio = **2,5/10 no onboarding** → abriu MD-1…MD-9.
   Veredito: **DO-NOT-SHIP** enquanto MD-1/2/3 (🔴) abertos.
+- **2026-06-01 — feedbacks do dono (planejamento): modo fantasma + estética do Extremo**
+  **MD-23 🔴** (Modo Desafio é toggle invisível → deve ser MODO real: segmented
+  control + identidade cromática vibrante + recompensa viciante; Norman/Tesler).
+  **TR-M5** (revelação preguiçosa do Extremo: arestas devem **crescer da origem ao
+  destino** (Trim Path/draw-on), em **ordem aleatória** conectando extremos opostos,
+  com **poda dinâmica**; reduzir p/ ~105 dívidas se melhorar — "a estética vale").
+  Specs em `UX_STUDY.md` §6 e `UX_TRANSITION_MAP.md` §3.4. Sem código (fase de planejamento).
 - **2026-06-01 — estudo de UX completo (planejamento, sem código) + vacilo TM-1**
   3 agentes críticos produziram `docs/UX_STUDY.md` (personas+jornada, spec das
   transições, plano de engajamento ético) e `docs/UX_TRANSITION_MAP.md` (9🔴 TR-*

@@ -197,7 +197,7 @@ de um interruptor invisível no carro-chefe viciante do app** — sem trair a é
 | **v0.6.6** | Corrigir o que **confunde/contradiz** | **TM-1** (playhead — semântica) · TR-D1 (bug do ◀ + dim) · TR-D2 (vão de ativação) |
 | **v0.6.7** | **Modo Desafio de verdade + Finais** | **MD-23** (segmented control Assistir/Desafio + identidade cromática vibrante + recompensa suculenta) · TR-M1 + TR-D6 (telas de fim com CTA/open-loop) · `object Progress` (persistência local) |
 | **v0.7.0** | **Coleção & juiciness** | Home como hub de progresso (§4.1) · juiciness P0 (§4.5) · TR-D3 · TR-P1/P2 |
-| **v0.7.x** | **Motion como idioma** | tokens centralizados · fade-through/shared-axis nos cortes secos (TR-S/R/C) · TM-2/TM-3 |
+| **v0.7.x** | **Motion como idioma + clímax do Extremo** | tokens centralizados · fade-through/shared-axis nos cortes secos (TR-S/R/C) · **TR-M5** (draw-on das arestas + ordem aleatória + poda dinâmica; reduzir p/ ~105 se preciso) · TM-2/TM-3 |
 | **v0.8.0** | **Aprendizado profundo** | dificuldade adaptativa (§4.2) · modo Misto/interleaving (§4.4) · escalas Sort/MinCashFlow |
 
 Tudo respeita: dark/glass nativo, Material 3 + acabamento Apple, local-only/sem PII,
