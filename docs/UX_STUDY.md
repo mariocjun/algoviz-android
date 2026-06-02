@@ -7,7 +7,8 @@ fase. Companion de `UX_TRANSITION_MAP.md`, `VALIDATION_LOG.md` e da skill
 
 Índice: §1 Personas · §2 Jornada (curva emocional) · §3 Spec das transições ·
 §4 Plano de engajamento/retenção · **§5 Semântica de representação temporal (o
-vacilo do playhead)** · §6 Roadmap faseado.
+vacilo do playhead)** · **§6 O Modo Desafio precisa ser um MODO (não um toggle
+fantasma)** · §7 Roadmap faseado.
 
 ---
 
@@ -139,12 +140,62 @@ fronteiras (fencepost) e o mapeamento espaço-temporal** contra a convenção. O
 
 ---
 
-## 6. Roadmap faseado (proposto — sem datas; ordem por alavanca)
+## 6. ⚠️ O Modo Desafio precisa ser um MODO (não um toggle fantasma) — MD-23 🔴
+
+> Levantado pelo dono (2026-06-01). Hoje o "🎯 Desafio" é um **toggle escondido**:
+> ativá-lo **não muda nada visível** — o usuário precisa *saber* que tem de ligar
+> E depois apertar Executar para o desafio nascer. Não é um modo; é um estado oculto.
+
+### 6.1 A ciência (mode errors — Norman / Tesler)
+- **Mode error (Norman, 1981):** quando o usuário não percebe em que modo está, age
+  como se fosse outro, e recebe uma resposta inesperada — "startling, disorienting
+  and annoying". O Desafio fantasma é exatamente isto: liga-se sem feedback, e a
+  surpresa vem só na 1ª pergunta.
+- **Larry Tesler — "NO MODES"** (placa de carro; Xerox PARC/Apple): o mal não é o
+  modo em si, é o **modo invisível**. Modos **visíveis e persistentes** (controles
+  que mostram o estado) são corretos; estados escondidos não. O dono pede justamente
+  isto: tornar o modo explícito.
+- **Nielsen #1 (visibilidade do status do sistema):** o usuário deve sempre saber em
+  que modo está, só de olhar.
+
+### 6.2 Solução — dois modos explícitos, com identidade própria
+1. **Seletor de modo (segmented control)** no topo do Scheduler, substituindo o toggle:
+   **`👁 Assistir`** | **`🎯 Desafio`** — mutuamente exclusivos, **sempre** um ativo,
+   estado **sempre** visível. Escolher um modo é uma decisão clara, não um on/off oculto.
+2. **Mudança visual IMEDIATA ao entrar no Desafio** (indicação clara de estado — Norman):
+   - **Identidade cromática distinta:** Assistir mantém o accent azul (`ACCENT #4296FA`);
+     o Desafio adota uma **paleta vibrante/quente** (ex.: magenta/laranja energético,
+     saturação maior). Chips, playhead, bordas e a faixa de status assumem a cor do
+     modo — o app **inteiro do Scheduler "veste" o modo desafio**.
+   - **Faixa de modo persistente:** ao entrar, uma barra fina no topo
+     **"🎯 MODO DESAFIO — preveja cada decisão"** na cor vibrante, visível enquanto
+     o modo dura. Resolve TR-D4 (reativar silencioso) e o "modo fantasma".
+   - **Não esperar o Executar:** o modo se anuncia no instante da escolha; idealmente
+     já inicia a reprodução (encadeia com TR-D2 — fecha o vão de ativação).
+3. **Recompensa mais viciante** (variable reward §5.3 + juiciness §5.4, ancorada em aprendizado):
+   - **Acerto "suculento":** scale-stamp + burst de partículas/glow vibrante no ✓,
+     som pentatônico ascendente, haptic mais forte (hoje o veredito é corte seco — TR-D3).
+   - **Streak com escalada:** combo de acertos consecutivos cresce visualmente
+     ("🔥 3 seguidas!"), recompensa variável crescente (Hook/investimento).
+   - **Recompensa da Caça:** cada acerto revela algo (desbloqueia o próximo algoritmo
+     da trilha §4.2; ou a métrica). Fim do round como clímax (§4.3): "Acertou X de Y".
+   - **Ética (§4.6):** tudo amarrado a desempenho/aprendizado, nunca a tempo de tela;
+     o modo Assistir continua o default seguro e reversível (modeless-friendly, Tesler).
+
+### 6.3 Resolve / conecta
+MD-23 (este) · TR-D4 (reativar silencioso) · TR-D2 (vão de ativação) · TR-D3
+(veredito sem motion) · §4.5 juiciness P0. **É o redesign que transforma o Desafio
+de um interruptor invisível no carro-chefe viciante do app** — sem trair a ética
+(maestria, não vício vazio).
+
+---
+
+## 7. Roadmap faseado (proposto — sem datas; ordem por alavanca)
 
 | Fase | Foco | Itens |
 |---|---|---|
 | **v0.6.6** | Corrigir o que **confunde/contradiz** | **TM-1** (playhead — semântica) · TR-D1 (bug do ◀ + dim) · TR-D2 (vão de ativação) |
-| **v0.6.7** | **Finais** (peak-end, maior retorno) | TR-M1 + TR-D6 (telas de fim com CTA/open-loop) · `object Progress` (persistência local) |
+| **v0.6.7** | **Modo Desafio de verdade + Finais** | **MD-23** (segmented control Assistir/Desafio + identidade cromática vibrante + recompensa suculenta) · TR-M1 + TR-D6 (telas de fim com CTA/open-loop) · `object Progress` (persistência local) |
 | **v0.7.0** | **Coleção & juiciness** | Home como hub de progresso (§4.1) · juiciness P0 (§4.5) · TR-D3 · TR-P1/P2 |
 | **v0.7.x** | **Motion como idioma** | tokens centralizados · fade-through/shared-axis nos cortes secos (TR-S/R/C) · TM-2/TM-3 |
 | **v0.8.0** | **Aprendizado profundo** | dificuldade adaptativa (§4.2) · modo Misto/interleaving (§4.4) · escalas Sort/MinCashFlow |
@@ -158,3 +209,4 @@ revisor de IHC antes de qualquer implementação.
 - Convenção now-line: [Monday Gantt](https://support.monday.com/hc/en-us/articles/360015643840), [Tempo](https://help.tempo.io/gantt/latest/gantt-chart-elements), [OpenProject](https://www.openproject.org/docs/user-guide/gantt-chart/)
 - Dijkstra, EWD831 — *Why numbering should start at zero* (half-open intervals / fencepost)
 - Norman — mapping; e os princípios de IHC educacional em `UX_TRANSITION_MAP.md` §5.
+- Modos (§6): [Mode (user interface) — Wikipedia](https://en.wikipedia.org/wiki/Mode_(user_interface)) (mode errors; Norman 1981) · [Larry Tesler — A Personal History of Modeless Text Editing (PDF)](https://worrydream.com/refs/Tesler_2012_-_A_Personal_History_of_Modeless_Text_Editing_and_Cut-Copy-Paste.pdf) ("NO MODES").

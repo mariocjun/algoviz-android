@@ -34,6 +34,7 @@ UX/qualidade do projeto.
 | **MD-20** | 🔴 | **Resposta vazava no INTERVALO entre perguntas**: faixa mostrava "Próxima: t3" por ~0,6 s antes da pergunta seguinte (hideNext só cobria o pending) | Integridade do teste | ✅ v0.6.5 — `hideNext = challengeMode` (esconde sempre que o modo está ligado) |
 | MD-21 | 🟡 | Instrução obsoleta no feedback: "👆 Toque na tarefa" persistia após já ter respondido; sem fechamento/feedforward | Gulf of evaluation; Nielsen #1 | ✅ v0.6.5 — prompt vira veredito "Acertou! ✓ / Era X ✗ · Próxima pergunta em instantes…" |
 | MD-22 | 🟢 | Transração prompt↔veredito↔próxima ainda é corte seco (sem AnimatedVisibility/Crossfade) | Movimento (HIG) | aberto |
+| **MD-23** | 🔴 | **"Modo Desafio" é um toggle FANTASMA**: ativá-lo não muda nada visível; só vira desafio ao Executar. Deve ser um MODO real (segmented control Assistir/Desafio), com identidade cromática vibrante própria e recompensa mais viciante | Mode error (Norman 1981); Tesler "NO MODES"; Nielsen #1 | aberto (v0.6.7) — spec em `UX_STUDY.md` §6 |
 | MD-16 | 🟢 | Cor ACCENT na microcópia de gesto compete com a pergunta | Hierarquia tipográfica | aberto |
 | MD-17 | 🟢 | Sheet sem animação de entrada nem "pular" | Movimento; controle | aberto |
 | MD-18 | 🟢 | "Não mostrar de novo" não persiste entre sessões (em memória) | Respeito ao recorrente | aberto |
