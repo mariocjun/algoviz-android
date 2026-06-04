@@ -256,7 +256,6 @@ private val CODEX: List<Node> = listOf(
 
     Sub("Como aprender com este app"),
     B("Sort Visualizer — escolha um algoritmo, toque ▶. Use ◀▶ para avançar passo a passo e 'Explicação IA' para entender a lógica."),
-    B("Scheduler — toque ▶ para animar o Gantt. Toque ℹ para ver a heurística de cada algoritmo de escalonamento."),
     B("Racha — vá à aba Grafo. Toque '✨ caso extremo' para ver 190 dívidas colapsarem em 1 pagamento."),
     B("Min Cash Flow — deixe o tutorial abrir e avance os 4 atos com ▶. Pause e observe a fórmula no display."),
     B("Profiler — toque Run para medir o hardware do seu dispositivo (NEON, SIMD, STREAM, latência)."),
@@ -268,9 +267,6 @@ private val CODEX: List<Node> = listOf(
     P("8 ordenações escritas uma só vez como corrotinas C++ (Generator<Step>): o benchmark drena o " +
       "fluxo e conta operações; o Compose consome o MESMO fluxo e anima. Modo corrida, áudio ASMR " +
       "pentatônico, barras em arco-íris por valor."),
-    Sub("Scheduler trainer"),
-    P("Escalonador de CPU no estilo do livro do Maziero: Gantt swimlane (preenchido = executando, " +
-      "vazado = esperando), 7 algoritmos, e um cartão didático com a heurística de cada um."),
     Sub("Racha"),
     P("Divide a conta entre amigos e fecha com o menor número de pagamentos (simplificação gulosa de " +
       "dívidas — o que o Splitwise faz). Três abas: Saldos, Acerto e Grafo."),
@@ -285,12 +281,12 @@ private val CODEX: List<Node> = listOf(
     P("Este app: a documentação viva do projeto, incluindo o mapa de qualidade abaixo."),
 
     Sec("2", "Arquitetura"),
-    P("O C++ é dono do modelo; o Compose é dono dos pixels. Os núcleos (sorts, escalonador, " +
+    P("O C++ é dono do modelo; o Compose é dono dos pixels. Os núcleos (sorts, " +
       "redução de dívidas, engines de viz) são livres de NDK e testados no host — então a CI testa o " +
       "algoritmo de verdade, não uma reimplementação. A ponte é JNI; o áudio é AAudio."),
     Pre("Kotlin/Compose  ──JNI──▶  libalgoviz.so (C++23)\n" +
         "  MainActivity            bench/  (registry + fold dispatch)\n" +
-        "  Viz/Sched/...           algoviz/ (corrotinas Generator<Step>)\n" +
+        "  Viz/...                 algoviz/ (corrotinas Generator<Step>)\n" +
         "  per-frame buffer ◀──    viz/ (single/race) · audio_engine (AAudio)"),
     B("Padrão concept + tupla + fold: um benchmark/sort malformado é erro de compilação."),
     B("SIMD com gating por getauxval(AT_HWCAP) — nunca por /proc/cpuinfo (que mente)."),
@@ -302,12 +298,13 @@ private val CODEX: List<Node> = listOf(
     B("v0.5.1 — corrige o overlay que engolia toques; Extremo (41 dívidas)."),
     B("v0.5.2 — Min Cash Flow vira app próprio; grafo completo de 190; 4 atos."),
     B("v0.5.3 — tutorial interativo, pops flutuantes, passe de acessibilidade + tablet."),
+    B("v0.6.7 — Escalonador vira app próprio (Escalonador Mazier); algoviz fica com 5 mini-apps."),
 
     Sec("4", "Qualidade — ABNT NBR ISO/IEC 25010"),
     P("A norma brasileira de qualidade de produto de software (modelo SQuaRE, ed. 2011) define 8 " +
       "características. Abaixo, a postura honesta do algoviz em cada uma — com lacunas assumidas."),
     Q("Adequação funcional", St.OK,
-      "Núcleos provados no host: golden 7/7 do escalonador, 11 testes do Racha, 5 da redução, " +
+      "Núcleos provados no host: 11 testes do Racha, 5 da redução, " +
       "replay de passos dos sorts (1400+ asserções). O que a UI anima é o mesmo código testado."),
     Q("Eficiência de desempenho", St.OK,
       "C++23 -O3/LTO, NEON/SIMD com pinagem por cluster, snapshot por frame zero-cópia (sem GC). " +

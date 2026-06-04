@@ -2,8 +2,8 @@
 
 Guidance for Claude Code (and any AI agent) working in this repository.
 **This repo is a template** — a forkable C++/NDK Android base + on-device
-profiler that has grown into a suite of **6 didactic mini-apps** (Sort
-visualizer, Scheduler trainer, Racha, Min Cash Flow, Profiler, Códex). If you're
+profiler that has grown into a suite of **5 didactic mini-apps** (Sort
+visualizer, Racha, Min Cash Flow, Profiler, Códex). If you're
 an agent that just landed here, read this top-to-bottom once; it's the map.
 Cross-tool agents: see `AGENTS.md`. Invokable capabilities: `.claude/skills/`.
 
@@ -40,10 +40,9 @@ app/
                               Kotlin, -std=c++23 via CMAKE_CXX_STANDARD
   src/main/
     AndroidManifest.xml       HomeActivity launcher; mini-app activities exported=false; INTERNET perm
-    kotlin/.../HomeActivity.kt launcher: 6 mini-app tiles (content-desc tile_*); loads libalgoviz
+    kotlin/.../HomeActivity.kt launcher: 5 mini-app tiles (content-desc tile_*); loads libalgoviz
     kotlin/.../MainActivity.kt  Profiler UI (programmatic): btn_run/btn_hwcaps/... + paste.rs upload
     kotlin/.../VizActivity.kt   Sort visualizer (Compose + Canvas snapshot from C++); VizBridge.kt = JNI/AAudio
-    kotlin/.../SchedActivity.kt Scheduler trainer (Maziero swimlane Gantt; sched/sim.h golden-tested)
     kotlin/.../Splitwise.kt + SplitwiseActivity.kt  Racha: Ledger (cents) + greedy settle + 3-tab UI
     kotlin/.../DebtReduction.kt stepped reduction engine (host-tested) behind Min Cash Flow
     kotlin/.../ExtremeActivity.kt + ExtremeTutorial.kt  "Min Cash Flow": 4-act 190→1 walkthrough + 3B1B intro
@@ -119,8 +118,8 @@ Before delivering any UI/UX change:
    (where to look), tap-target placement (where to click), minimalism, and motion
    (spring physics, glow, depth). Material 3 skeleton + Apple-grade finish.
 4. **Never ship a screen foreign to the app.** Keep visuals native to the dark,
-   polished design language; render reference *semantics* (e.g. Maziero's
-   filled=running) in the app's own style, never as a screenshot of a book.
+   polished design language; render reference *semantics* (e.g. a textbook
+   diagram's rules) in the app's own style, never as a screenshot of a book.
 5. **Replicate owner-provided references** (apps/mockups) faithfully — match their
    interaction model and feel — then elevate.
 

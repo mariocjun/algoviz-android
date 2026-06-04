@@ -1,7 +1,7 @@
 // HomeActivity — the MAIN/LAUNCHER. Lists the mini-apps that ship in this
 // build as tappable tiles; each one routes to an existing dedicated Activity
 // via explicit Intent. Compose + Material 3 dark scheme, edge-to-edge to match
-// the rest of the modern surfaces (VizActivity, SchedActivity).
+// the rest of the modern surfaces (VizActivity, etc.).
 package com.mariocjun.algoviz
 
 import android.content.Intent
@@ -27,7 +27,6 @@ import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Hub
-import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -64,13 +63,6 @@ private val TILES = listOf(
         icon = Icons.AutoMirrored.Filled.Sort,
         target = VizActivity::class.java,
         testId = "tile_sort",
-    ),
-    Tile(
-        title = "Scheduler trainer",
-        subtitle = "CPU/task scheduler — Maziero reference",
-        icon = Icons.Filled.Schedule,
-        target = SchedActivity::class.java,
-        testId = "tile_sched",
     ),
     Tile(
         title = "Racha",
@@ -115,8 +107,8 @@ class HomeActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             MaterialTheme(
-                // Dusk palette (Palette.kt) — the launcher matches the Scheduler's
-                // new premium surfaces. Tiles read primary/surfaceVariant from here.
+                // Dusk palette (Palette.kt) — shared premium dark surfaces.
+                // Tiles read primary/surfaceVariant from here.
                 colorScheme = darkColorScheme(
                     background = Dusk.Background,
                     surface = Dusk.Surface,

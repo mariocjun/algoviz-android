@@ -47,12 +47,6 @@
             android:exported="false"
             android:configChanges="orientation|keyboardHidden|screenSize|screenLayout" />
 
-        <!-- Scheduler trainer mini-app (Maziero CPU/task scheduler reference). -->
-        <activity
-            android:name=".SchedActivity"
-            android:exported="false"
-            android:configChanges="orientation|keyboardHidden|screenSize|screenLayout" />
-
         <!-- "Racha" — expense splitter / debt simplification mini-app. -->
         <activity
             android:name=".SplitwiseActivity"

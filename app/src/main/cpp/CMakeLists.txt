@@ -159,12 +159,7 @@ set(VIZ_SOURCES
     viz/viz_engine.cpp
     viz/native_bridge.cpp)
 
-# Scheduler mini-app — engine (sim.h) is header-only and host-validated; the
-# bridge here lifts it into the APK via SchedBridge JNI for SchedActivity.
-set(SCHED_SOURCES
-    sched/sched_bridge.cpp)
-
-add_library(algoviz SHARED jni.cpp ${BENCH_SOURCES} ${VIZ_SOURCES} ${SCHED_SOURCES})
+add_library(algoviz SHARED jni.cpp ${BENCH_SOURCES} ${VIZ_SOURCES})
 # aaudio: the NDK's built-in low-latency audio API used by the ASMR synth
 # (viz/audio_engine.cpp). No third-party audio dependency.
 target_link_libraries(algoviz ${BENCH_LIBS} aaudio)

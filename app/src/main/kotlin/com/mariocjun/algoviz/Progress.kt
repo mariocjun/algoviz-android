@@ -31,9 +31,7 @@ object Progress {
 
     // ---- Mastery / collection (foundation for v0.6.7+) ----
     val sortsMastered: Set<Int> get() = readIntSet("sorts_mastered")
-    val schedulersMastered: Set<Int> get() = readIntSet("scheds_mastered")
     fun markSortMastered(i: Int) = addToIntSet("sorts_mastered", i)
-    fun markSchedulerMastered(i: Int) = addToIntSet("scheds_mastered", i)
 
     // ---- Challenge accuracy — per algorithm, bounded sliding window of '1'/'0' ----
     fun recordChallenge(algoIdx: Int, correct: Boolean) {

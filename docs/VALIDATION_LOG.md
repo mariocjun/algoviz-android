@@ -12,7 +12,28 @@ UX/qualidade do projeto.
 
 ## Apontamentos ABERTOS
 
+### Remoção do Escalonador → app próprio (gate 2026-06-04, v0.6.7)
+
+O Scheduler trainer foi removido do algoviz (virou **Escalonador Mazier**,
+`github.com/mariocjun/escalonador-mazier`). Gate `validate-before-ship` rodado —
+**sem 🔴**, nada bloqueia o fechamento:
+
+| Check | Resultado |
+|---|---|
+| Testes host (ctest) | ✅ 6/6 (json · registry · sorts · sort_registry · single/race engine); `test_sched_random` removido |
+| `compileDebugKotlin` | ✅ SUCCESSFUL — zero referência pendente a `SchedActivity`/`SchedBridge`/`SchedCards` |
+| `assembleDebug` (nativo 3 ABIs + APK) | ✅ SUCCESSFUL; `libalgoviz.so` **sem** símbolo sched (JNI VizBridge/MainActivity intactos) |
+| Device N975F — Home | ✅ exatamente 5 tiles (`tile_sort/racha/profiler/mincashflow/codex`), **sem `tile_sched`**; layout limpo, paleta Dusk intacta, sem buraco |
+| Device — navegação vizinha | ✅ `tile_sort`→VizActivity · `tile_racha`→SplitwiseActivity · BACK→Home |
+| Crash check (logcat) | ✅ zero FATAL/SIGSEGV do app |
+| 🟡 residual | `docs/RELEASE_PLAN.md` e `docs/UX_STUDY.md` ainda citam o scheduler — docs de planejamento históricas, fora de escopo (passada futura) |
+
 ### Modo Desafio — Scheduler (origem: crítica HCI 2026-06-01; re-review ex-Apple)
+
+> ⚠️ **Migrado (2026-06-04, v0.6.7):** o Escalonador virou app próprio (**Escalonador
+> Mazier**, `github.com/mariocjun/escalonador-mazier`) e saiu do algoviz. Os MD-* abertos
+> abaixo (MD-6/8/16/17/19/22/23/24) **não são mais dívida do algoviz** — seguem com o
+> scheduler no novo repo. Mantidos como histórico (o log nunca apaga).
 
 | # | Sev | Apontamento | Princípio HCI | Status |
 |---|-----|-------------|---------------|--------|
